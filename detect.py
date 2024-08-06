@@ -1,101 +1,90 @@
-import cv2
-import numpy as np
-import requests
-from urllib.parse import urlparse
-from pathlib import Path
+import json
 import time
+import os
+import requests
+from PIL import Image
+import io
 
-def download_image(url):
-    start_time = time.time()
-    response = requests.get(url)
-    response.raise_for_status()
-    download_time = time.time() - start_time
-    return np.array(bytearray(response.content), dtype=np.uint8), download_time
+output_dir = "output_faces"
 
-def detect_faces(image, cascade_file):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    face_cascade = cv2.CascadeClassifier(cascade_file)
-    if face_cascade.empty():
-        raise IOError('Unable to load the face cascade classifier xml file')
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-    return faces
+def update_status(item_id, status):
+    print(f"상태 업데이트: {item_id} - {status}")
 
-def crop_face(image, face, ratio):
-    img_h, img_w = image.shape[:2]
-    x, y, w, h = face
-    center_x, center_y = x + w // 2, y + h // 2
-
-    if ratio == '3:4':
-        if img_w / img_h > 3 / 4:  # 이미지가 3:4보다 가로로 길 경우
-            new_h = img_h
-            new_w = int(new_h * 3 / 4)
-        else:  # 이미지가 3:4보다 세로로 길 경우
-            new_w = img_w
-            new_h = int(new_w * 4 / 3)
-    elif ratio == '1:1':
-        new_h = new_w = min(img_h, img_w)
+def process_image(image_url, item_id, image_type):
+    print(f"이미지 처리 중: {image_url}")
     
-    left = max(center_x - new_w // 2, 0)
-    top = max(center_y - new_h // 2, 0)
-    right = min(left + new_w, img_w)
-    bottom = min(top + new_h, img_h)
+    try:
+        # 이미지 다운로드
+        response = requests.get(image_url)
+        response.raise_for_status()  # HTTP 오류 확인
+        
+        # 응답 내용 확인
+        content_type = response.headers.get('content-type')
+        print(f"콘텐츠 타입: {content_type}")  # 디버깅용 출력
+        if 'image' not in content_type:
+            print(f"경고: 콘텐츠 타입이 이미지가 아닙니다: {content_type}")
+            return
+
+        img = Image.open(io.BytesIO(response.content))
+        print(f"원본 이미지 모드: {img.mode}")  # 디버깅용 출력
+        
+        # RGBA 모드인 경우 RGB로 변환
+        if img.mode == 'RGBA':
+            img = img.convert('RGB')
+            print("RGBA에서 RGB로 변환됨")  # 디버깅용 출력
+        
+        print(f"최종 이미지 모드: {img.mode}")  # 디버깅용 출력
+        
+        # 처리된 이미지 저장
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        
+        output_filename = f"{item_id}_{image_type}.png"  # JPEG 대신 PNG 사용
+        output_path = os.path.join(output_dir, output_filename)
+        
+        img.save(output_path)
+        
+        print(f"이미지 저장됨: {output_path}")
+        update_status(item_id, f"{image_type}_완료")
+    except requests.RequestException as e:
+        print(f"이미지 다운로드 오류: {e}")
+    except Image.UnidentifiedImageError:
+        print(f"이미지를 식별할 수 없음: {image_url}")
+    except Exception as e:
+        print(f"이미지 처리 중 오류 발생: {e}")
+
+def process_message(data):
+    item_id = data['_id']
+    images = data['images']
     
-    # 이미지 경계를 벗어나지 않도록 조정
-    if right - left < new_w:
-        left = max(right - new_w, 0)
-    if bottom - top < new_h:
-        top = max(bottom - new_h, 0)
+    # 썸네일 이미지 처리
+    if 'thumbnail' in images:
+        process_image(images['thumbnail'], item_id, '썸네일')
     
-    return image[top:bottom, left:right]
-
-def process_urls(input_file, output_dir, cascade_file):
-    with open(input_file, 'r') as f:
-        urls = f.read().splitlines()
+    # 설명 이미지 처리
+    for i, img_url in enumerate(images.get('description', []), 1):
+        process_image(img_url, item_id, f'설명_{i}')
+    update_status(item_id, '설명_모두_완료')
     
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # 제품 이미지 처리
+    for i, img_url in enumerate(images.get('product', []), 1):
+        process_image(img_url, item_id, f'제품_{i}')
+    update_status(item_id, '제품_모두_완료')
     
-    total_download_time = 0
-    total_processing_time = 0
-    start_time = time.time()
+    # 워터마크 이미지 처리 (필요한 경우)
+    if 'watermark' in images:
+        process_image(images['watermark'], item_id, '워터마크')
+    
+    # 모든 처리 완료
+    update_status(item_id, '모든_처리_완료')
 
-    for i, url in enumerate(urls):
-        try:
-            image_data, download_time = download_image(url)
-            total_download_time += download_time
-
-            start_processing = time.time()
-            image = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
-            faces = detect_faces(image, cascade_file)
-            
-            for j, face in enumerate(faces):
-                # 3:4 ratio crop
-                crop_3_4 = crop_face(image, face, '3:4')
-                cv2.imwrite(str(output_dir / f"face_{i}_{j}_3_4.jpg"), crop_3_4)
-                
-                # 1:1 ratio crop
-                crop_1_1 = crop_face(image, face, '1:1')
-                cv2.imwrite(str(output_dir / f"face_{i}_{j}_1_1.jpg"), crop_1_1)
-            
-            total_processing_time += time.time() - start_processing
-            
-            print(f"Processed {url}: Found {len(faces)} faces")
-        except Exception as e:
-            print(f"Error processing {url}: {str(e)}")
-
-    total_time = time.time() - start_time
-    other_time = total_time - (total_download_time + total_processing_time)
-
-    # 결과를 텍스트 파일에 저장
-    log_file = output_dir / "processing_time.txt"
-    with open(log_file, "w") as f:
-        f.write(f"파일 다운로드 시간 (네트워크 지연): {total_download_time:.2f} 초\n")
-        f.write(f"이미지 처리 시간: {total_processing_time:.2f} 초\n")
-        f.write(f"기타 처리 시간 (라이브러리 로딩 등): {other_time:.2f} 초\n")
-        f.write(f"총 처리 시간: {total_time:.2f} 초\n")
+def main():
+    # JSON 파일에서 테스트 데이터 읽기
+    with open('test_data.json', 'r') as file:
+        test_data = json.load(file)
+    
+    # 테스트 데이터 처리
+    process_message(test_data)
 
 if __name__ == "__main__":
-    input_file = "source.txt"
-    output_dir = "output_faces"
-    cascade_file = "lbpcascade_animeface.xml"
-    process_urls(input_file, output_dir, cascade_file)
+    main()
