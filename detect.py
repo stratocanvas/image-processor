@@ -4,6 +4,7 @@ import os
 import requests
 from PIL import Image
 import io
+import concurrent.futures
 
 output_dir = "output_faces"
 
@@ -28,24 +29,18 @@ def process_image(image_url, item_id, image_type):
         img = Image.open(io.BytesIO(response.content))
         print(f"원본 이미지 모드: {img.mode}")  # 디버깅용 출력
         
-        # RGBA 모드인 경우 RGB로 변환
-        if img.mode == 'RGBA':
-            img = img.convert('RGB')
-            print("RGBA에서 RGB로 변환됨")  # 디버깅용 출력
-        
-        print(f"최종 이미지 모드: {img.mode}")  # 디버깅용 출력
-        
         # 처리된 이미지 저장
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         
-        output_filename = f"{item_id}_{image_type}.png"  # JPEG 대신 PNG 사용
+        output_filename = f"{item_id}_{image_type}.webp"  # JPEG 대신 PNG 사용
         output_path = os.path.join(output_dir, output_filename)
         
-        img.save(output_path)
+        img.save(output_path, format='WEBP')
         
         print(f"이미지 저장됨: {output_path}")
         update_status(item_id, f"{image_type}_완료")
+        
     except requests.RequestException as e:
         print(f"이미지 다운로드 오류: {e}")
     except Image.UnidentifiedImageError:
@@ -57,25 +52,31 @@ def process_message(data):
     item_id = data['_id']
     images = data['images']
     
-    # 썸네일 이미지 처리
-    if 'thumbnail' in images:
-        process_image(images['thumbnail'], item_id, '썸네일')
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = []
+        
+        # 썸네일 이미지 처리
+        if 'thumbnail' in images:
+            futures.append(executor.submit(process_image, images['thumbnail'], item_id, '썸네일'))
+        
+        # 설명 이미지 처리
+        for i, img_url in enumerate(images.get('description', []), 1):
+            futures.append(executor.submit(process_image, img_url, item_id, f'설명_{i}'))
+        
+        # 제품 이미지 처리
+        for i, img_url in enumerate(images.get('product', []), 1):
+            futures.append(executor.submit(process_image, img_url, item_id, f'제품_{i}'))
+        
+        # 워터마크 이미지 처리 (필요한 경우)
+        if 'watermark' in images:
+            futures.append(executor.submit(process_image, images['watermark'], item_id, '워터마크'))
+        
+        # 모든 작업이 완료될 때까지 기다림
+        concurrent.futures.wait(futures)
     
-    # 설명 이미지 처리
-    for i, img_url in enumerate(images.get('description', []), 1):
-        process_image(img_url, item_id, f'설명_{i}')
+    # 상태 업데이트
     update_status(item_id, '설명_모두_완료')
-    
-    # 제품 이미지 처리
-    for i, img_url in enumerate(images.get('product', []), 1):
-        process_image(img_url, item_id, f'제품_{i}')
     update_status(item_id, '제품_모두_완료')
-    
-    # 워터마크 이미지 처리 (필요한 경우)
-    if 'watermark' in images:
-        process_image(images['watermark'], item_id, '워터마크')
-    
-    # 모든 처리 완료
     update_status(item_id, '모든_처리_완료')
 
 def main():
