@@ -7,6 +7,7 @@ import time
 import json
 from PIL import Image
 from io import BytesIO
+import os
 
 def download_image(url):
     start_time = time.time()
@@ -171,7 +172,9 @@ def process_urls(input_file, output_dir, cascade_file):
         f.write(f"총 처리 시간: {total_time:.2f} 초\n")
 
 if __name__ == "__main__":
-    input_file = "/Users/inwonback/Documents/본업/transformation/source.json"  # JSON 파일 경로로 수정
+    # 현재 스크립트의 디렉토리 경로
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    input_file = os.path.join(current_dir, 'source.json')  # 상대 경로로 수정
     output_dir = "output_faces"
     cascade_file = "lbpcascade_animeface.xml"
     process_urls(input_file, output_dir, cascade_file)

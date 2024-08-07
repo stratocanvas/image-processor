@@ -1,0 +1,16 @@
+{
+    "_id": "TEST_ID_001",
+    "images": {
+        "thumbnail": "https://kiteapp.s3.ap-northeast-2.amazonaws.com/title.png",
+        "description": [
+            "https://i.namu.wiki/i/ujWyCRh8LnPuni7XcyEy4kPJ_XdsgDPCJpLbWqN3rgSxvVlaj9uViEAtfQPWzR_0TixksrT-FuVN2h8WhXtdrQ.webp",
+            "https://kiteapp.s3.ap-northeast-2.amazonaws.com/artist/7JYhze1wBRe7OcLN_C_9c.png"
+        ],
+        "product": [
+            "https://kiteapp.s3.ap-northeast-2.amazonaws.com/test/GSWwZ0AWUAAM2T21.jpg",
+            "https://kiteapp.s3.ap-northeast-2.amazonaws.com/test/GSWwWnaXoAAeegN1.jpg",
+            "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQDiuUO82UVePo2MweEE2cflMQiUo9ibTa27A&s"
+        ],
+        "watermark": "https://kiteapp.s3.ap-northeast-2.amazonaws.com/test/watermark.jpg"
+    }
+}
