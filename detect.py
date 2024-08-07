@@ -84,7 +84,7 @@ def process_urls(input_file, output_dir, cascade_file):
                     # 얼굴 인식 실패 시 중앙 기준으로 자르기
                     print(f"얼굴 인식 실패 {url}. 중앙 편집.")
                     crop_3_4 = crop_face(image, (0, 0, image.shape[1], image.shape[0]), '3:4')  # 전체 이미지 자르기
-                    webp_file_name_3_4 = f"{output_dir}/{image_id}_{img_type}_center_cropped_{url.split('/')[-1].split('.')[0]}_3_4.webp"
+                    webp_file_name_3_4 = f"{output_dir}/{image_id}_{img_type}_center_3_4.webp"  # 파일 이름 수정
                     
                     # 이미지 크기 조정 (예: 600x800)
                     target_size_3_4 = (600, 800)
@@ -92,12 +92,12 @@ def process_urls(input_file, output_dir, cascade_file):
                         resized_crop_3_4 = cv2.resize(crop_3_4, target_size_3_4)  # 원하는 크기로 조정
                     else:
                         resized_crop_3_4 = crop_3_4  # 원본 크기 유지
-                    cv2.imwrite(webp_file_name_3_4, resized_crop_3_4, [int(cv2.IMWRITE_WEBP_QUALITY), 90])  # 크기 조정 후 저장, 품질 설정
+                    cv2.imwrite(webp_file_name_3_4, resized_crop_3_4)  # 크기 조정 후 저장
                     
                     print(f"변환 완료: {webp_file_name_3_4}")  # 저장 완료 메시지 출력
                     
                     crop_1_1 = crop_face(image, (0, 0, image.shape[1], image.shape[0]), '1:1')  # 전체 이미지 자르기
-                    webp_file_name_1_1 = f"{output_dir}/{image_id}_{img_type}_center_cropped_{url.split('/')[-1].split('.')[0]}_1_1.webp"
+                    webp_file_name_1_1 = f"{output_dir}/{image_id}_{img_type}_center_1_1.webp"  # 파일 이름 수정
                     
                     # 이미지 크기 조정 (예: 800x800)
                     target_size_1_1 = (800, 800)
@@ -105,7 +105,7 @@ def process_urls(input_file, output_dir, cascade_file):
                         resized_crop_1_1 = cv2.resize(crop_1_1, target_size_1_1)  # 원하는 크기로 조정
                     else:
                         resized_crop_1_1 = crop_1_1  # 원본 크기 유지
-                    cv2.imwrite(webp_file_name_1_1, resized_crop_1_1, [int(cv2.IMWRITE_WEBP_QUALITY), 90])  # 크기 조정 후 저장, 품질 설정
+                    cv2.imwrite(webp_file_name_1_1, resized_crop_1_1)  # 크기 조정 후 저장
                     
                     print(f"변환 완료: {webp_file_name_1_1}")  # 저장 완료 메시지 출력
                 
@@ -113,7 +113,7 @@ def process_urls(input_file, output_dir, cascade_file):
                     for j, face in enumerate(faces):
                         # 3:4 비율로 자르기
                         crop_3_4 = crop_face(image, face, '3:4')
-                        webp_file_name_3_4 = f"{output_dir}/{image_id}_{img_type}_face_{url.split('/')[-1].split('.')[0]}_3_4.webp"
+                        webp_file_name_3_4 = f"{output_dir}/{image_id}_{img_type}_face_3_4.webp"  # 파일 이름 수정
                         
                         # 이미지 크기 조정 (예: 600x800)
                         target_size_3_4 = (600, 800)
@@ -121,13 +121,13 @@ def process_urls(input_file, output_dir, cascade_file):
                             resized_crop_3_4 = cv2.resize(crop_3_4, target_size_3_4)  # 원하는 크기로 조정
                         else:
                             resized_crop_3_4 = crop_3_4  # 원본 크기 유지
-                        cv2.imwrite(webp_file_name_3_4, resized_crop_3_4, [int(cv2.IMWRITE_WEBP_QUALITY), 90])  # 크기 조정 후 저장, 품질 설정
+                        cv2.imwrite(webp_file_name_3_4, resized_crop_3_4)  # 크기 조정 후 저장
                         
                         print(f"변환 완료: {webp_file_name_3_4}")  # 저장 완료 메시지 출력
                         
                         # 1:1 비율로 자르기
                         crop_1_1 = crop_face(image, face, '1:1')
-                        webp_file_name_1_1 = f"{output_dir}/{image_id}_{img_type}_face_{url.split('/')[-1].split('.')[0]}_1_1.webp"
+                        webp_file_name_1_1 = f"{output_dir}/{image_id}_{img_type}_face_1_1.webp"  # 파일 이름 수정
                         
                         # 이미지 크기 조정 (예: 800x800)
                         target_size_1_1 = (800, 800)
@@ -135,7 +135,7 @@ def process_urls(input_file, output_dir, cascade_file):
                             resized_crop_1_1 = cv2.resize(crop_1_1, target_size_1_1)  # 원하는 크기로 조정
                         else:
                             resized_crop_1_1 = crop_1_1  # 원본 크기 유지
-                        cv2.imwrite(webp_file_name_1_1, resized_crop_1_1, [int(cv2.IMWRITE_WEBP_QUALITY), 90])  # 크기 조정 후 저장, 품질 설정
+                        cv2.imwrite(webp_file_name_1_1, resized_crop_1_1)  # 크기 조정 후 저장
                         
                         print(f"변환 완료: {webp_file_name_1_1}")  # 저장 완료 메시지 출력
                 
