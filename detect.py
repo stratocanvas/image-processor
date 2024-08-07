@@ -19,8 +19,10 @@ def download_image(url):
 def detect_faces(image, cascade_file):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     face_cascade = cv2.CascadeClassifier(cascade_file)
+    
     if face_cascade.empty():
         raise IOError('Unable to load the face cascade classifier xml file')
+    
     faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
     return faces
 
@@ -36,6 +38,7 @@ def crop_face(image, face, ratio):
         else:  # 이미지가 3:4보 가로로 길 경우
             new_w = img_w
             new_h = int(new_w * 4 / 3)
+    
     elif ratio == '1:1':
         new_h = new_w = min(img_h, img_w)
     
@@ -49,7 +52,6 @@ def crop_face(image, face, ratio):
         left = max(right - new_w, 0)
     if bottom - top < new_h:
         top = max(bottom - new_h, 0)
-    
     return image[top:bottom, left:right]
 
 def process_urls(input_file, output_dir, cascade_file):
@@ -83,25 +85,58 @@ def process_urls(input_file, output_dir, cascade_file):
                     print(f"얼굴 인식 실패 {url}. 중앙 편집.")
                     crop_3_4 = crop_face(image, (0, 0, image.shape[1], image.shape[0]), '3:4')  # 전체 이미지 자르기
                     webp_file_name_3_4 = f"{output_dir}/{image_id}_{img_type}_center_cropped_{url.split('/')[-1].split('.')[0]}_3_4.webp"
-                    cv2.imwrite(webp_file_name_3_4, crop_3_4)  # WebP 형식으로 저장
+                    
+                    # 이미지 크기 조정 (예: 600x800)
+                    target_size_3_4 = (600, 800)
+                    if crop_3_4.shape[1] >= target_size_3_4[0] and crop_3_4.shape[0] >= target_size_3_4[1]:
+                        resized_crop_3_4 = cv2.resize(crop_3_4, target_size_3_4)  # 원하는 크기로 조정
+                    else:
+                        resized_crop_3_4 = crop_3_4  # 원본 크기 유지
+                    cv2.imwrite(webp_file_name_3_4, resized_crop_3_4, [int(cv2.IMWRITE_WEBP_QUALITY), 90])  # 크기 조정 후 저장, 품질 설정
+                    
                     print(f"변환 완료: {webp_file_name_3_4}")  # 저장 완료 메시지 출력
                     
                     crop_1_1 = crop_face(image, (0, 0, image.shape[1], image.shape[0]), '1:1')  # 전체 이미지 자르기
                     webp_file_name_1_1 = f"{output_dir}/{image_id}_{img_type}_center_cropped_{url.split('/')[-1].split('.')[0]}_1_1.webp"
-                    cv2.imwrite(webp_file_name_1_1, crop_1_1)  # WebP 형식으로 저장
+                    
+                    # 이미지 크기 조정 (예: 800x800)
+                    target_size_1_1 = (800, 800)
+                    if crop_1_1.shape[1] >= target_size_1_1[0] and crop_1_1.shape[0] >= target_size_1_1[1]:
+                        resized_crop_1_1 = cv2.resize(crop_1_1, target_size_1_1)  # 원하는 크기로 조정
+                    else:
+                        resized_crop_1_1 = crop_1_1  # 원본 크기 유지
+                    cv2.imwrite(webp_file_name_1_1, resized_crop_1_1, [int(cv2.IMWRITE_WEBP_QUALITY), 90])  # 크기 조정 후 저장, 품질 설정
+                    
                     print(f"변환 완료: {webp_file_name_1_1}")  # 저장 완료 메시지 출력
+                
                 else:
                     for j, face in enumerate(faces):
                         # 3:4 비율로 자르기
                         crop_3_4 = crop_face(image, face, '3:4')
                         webp_file_name_3_4 = f"{output_dir}/{image_id}_{img_type}_face_{url.split('/')[-1].split('.')[0]}_3_4.webp"
-                        cv2.imwrite(webp_file_name_3_4, crop_3_4)  # WebP 형식으로 저장
+                        
+                        # 이미지 크기 조정 (예: 600x800)
+                        target_size_3_4 = (600, 800)
+                        if crop_3_4.shape[1] >= target_size_3_4[0] and crop_3_4.shape[0] >= target_size_3_4[1]:
+                            resized_crop_3_4 = cv2.resize(crop_3_4, target_size_3_4)  # 원하는 크기로 조정
+                        else:
+                            resized_crop_3_4 = crop_3_4  # 원본 크기 유지
+                        cv2.imwrite(webp_file_name_3_4, resized_crop_3_4, [int(cv2.IMWRITE_WEBP_QUALITY), 90])  # 크기 조정 후 저장, 품질 설정
+                        
                         print(f"변환 완료: {webp_file_name_3_4}")  # 저장 완료 메시지 출력
                         
                         # 1:1 비율로 자르기
                         crop_1_1 = crop_face(image, face, '1:1')
                         webp_file_name_1_1 = f"{output_dir}/{image_id}_{img_type}_face_{url.split('/')[-1].split('.')[0]}_1_1.webp"
-                        cv2.imwrite(webp_file_name_1_1, crop_1_1)  # WebP 형식으로 저장
+                        
+                        # 이미지 크기 조정 (예: 800x800)
+                        target_size_1_1 = (800, 800)
+                        if crop_1_1.shape[1] >= target_size_1_1[0] and crop_1_1.shape[0] >= target_size_1_1[1]:
+                            resized_crop_1_1 = cv2.resize(crop_1_1, target_size_1_1)  # 원하는 크기로 조정
+                        else:
+                            resized_crop_1_1 = crop_1_1  # 원본 크기 유지
+                        cv2.imwrite(webp_file_name_1_1, resized_crop_1_1, [int(cv2.IMWRITE_WEBP_QUALITY), 90])  # 크기 조정 후 저장, 품질 설정
+                        
                         print(f"변환 완료: {webp_file_name_1_1}")  # 저장 완료 메시지 출력
                 
                 print(f"Processed {url}: Found {len(faces)} faces")
@@ -114,11 +149,13 @@ def process_urls(input_file, output_dir, cascade_file):
                 elif img_type == 'description':
                     description_count += 1
                     # 설명 이미지 처리 완료 알림
+                    
                     if description_count == len(data['images']['description']):  # 모든 설명 처리 후
                         print("모든 설명 이미지 처리 완료.")
                 elif img_type == 'product':
                     product_count += 1
                     # 상품 이미지 처리 완료 알림
+                    
                     if product_count == len(data['images']['product']):  # 모든 상품 처리 후
                         print("모든 상품 이미지 처리 완료.")
 
