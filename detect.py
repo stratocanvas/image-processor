@@ -1,131 +1,177 @@
-import json
-import time
-import os
-import requests
-from PIL import Image
-import io
-import logging
-import gc
-import face_recognition
 import cv2
 import numpy as np
+import requests
+from urllib.parse import urlparse
+from pathlib import Path
+import time
+import json
+from PIL import Image
+from io import BytesIO
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+def download_image(url):
+    start_time = time.time()
+    response = requests.get(url)
+    response.raise_for_status()
+    download_time = time.time() - start_time
+    return np.array(bytearray(response.content), dtype=np.uint8), download_time
 
-output_dir = "output_faces"
+def detect_faces(image, cascade_file):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    face_cascade = cv2.CascadeClassifier(cascade_file)
+    if face_cascade.empty():
+        raise IOError('Unable to load the face cascade classifier xml file')
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+    return faces
 
-def update_status(item_id, status):
-    logging.info(f"상태 업데이트: {item_id} - {status}")
+def crop_face(image, face, ratio):
+    img_h, img_w = image.shape[:2]
+    x, y, w, h = face
+    center_x, center_y = x + w // 2, y + h // 2
 
-def detect_and_crop_face(image):
-    # PIL Image를 numpy array로 변환
-    np_image = np.array(image)
-
-    # RGB to BGR 변환 (face_recognition은 BGR 형식을 사용)
-    np_image = np_image[:, :, ::-1]
-
-    # 얼굴 위치 찾기
-    face_locations = face_recognition.face_locations(np_image)
-
-    if len(face_locations) == 0:
-        logging.warning(f"{image}에서 얼굴을 찾을 수 없습니다.")
-        return image  # 원본 이미지를 반환
-
-    # 첫 번째 얼굴만 사용
-    top, right, bottom, left = face_locations[0]
-
-    # 얼굴 주변의 여유 공간 계산 (20% 추가)
-    height, width = np_image.shape[:2]
-    margin_y = int((bottom - top) * 0.2)
-    margin_x = int((right - left) * 0.2)
-
-    # 크롭 영역 계산
-    crop_top = max(top - margin_y, 0)
-    crop_bottom = min(bottom + margin_y, height)
-    crop_left = max(left - margin_x, 0)
-    crop_right = min(right + margin_x, width)
-
-    # 이미지 크롭
-    cropped_image = np_image[crop_top:crop_bottom, crop_left:crop_right]
-
-    # BGR to RGB 변환 및 PIL Image로 변환
-    cropped_image = Image.fromarray(cropped_image[:, :, ::-1])
-
-    return cropped_image
-
-def process_image(image_url, item_id, image_type):
-    logging.info(f"이미지 처리 시작: {item_id}_{image_type}")
+    if ratio == '3:4':
+        if img_w / img_h > 3 / 4:  # 이미지가 3:4보다 가로로 길 경우
+            new_h = img_h
+            new_w = int(new_h * 3 / 4)
+        else:  # 이미지가 3:4보 가로로 길 경우
+            new_w = img_w
+            new_h = int(new_w * 4 / 3)
+    elif ratio == '1:1':
+        new_h = new_w = min(img_h, img_w)
     
-    try:
-        # 이미지 다운로드 및 열기
-        response = requests.get(image_url, timeout=30)
-        response.raise_for_status()
-        img = Image.open(io.BytesIO(response.content))
+    left = max(center_x - new_w // 2, 0)
+    top = max(center_y - new_h // 2, 0)
+    right = min(left + new_w, img_w)
+    bottom = min(top + new_h, img_h)
+    
+    # 이미지 경계를 벗어나지 않도록 조정
+    if right - left < new_w:
+        left = max(right - new_w, 0)
+    if bottom - top < new_h:
+        top = max(bottom - new_h, 0)
+    
+    return image[top:bottom, left:right]
+
+def process_urls(input_file, output_dir, cascade_file):
+    with open(input_file, 'r') as f:
+        data = json.load(f)  # JSON 데이터 로드
         
-        logging.info(f"원본 이미지 모드: {img.mode}")
+        print(data)  # JSON 구조 출력 (디버깅용)
         
-        # 얼굴 감지 및 크롭
-        cropped_img = detect_and_crop_face(img)
-        
-        # ���력 디렉토리 확인 및 생성
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        
-        # WEBP 형식으로 저장
-        output_filename = f"{item_id}_{image_type}.webp"
-        output_path = os.path.join(output_dir, output_filename)
-        
-        # WEBP로 저장 (품질 설정 가능, 0-100)
-        cropped_img.save(output_path, 'WEBP', quality=90)
-        
-        logging.info(f"이미지 저장됨: {output_path} (모드: {cropped_img.mode})")
-        update_status(item_id, f"{image_type}_완료")
-    except requests.RequestException as e:
-        logging.error(f"이미지 다운로드 오류: {e}")
-    except Image.UnidentifiedImageError:
-        logging.error(f"이미지를 식별할 수 없음: {image_url}")
-    except Exception as e:
-        logging.error(f"이미지 처리 중 예상치 못한 오류 발생: {e}")
-    finally:
-        if 'img' in locals():
-            img.close()
-        gc.collect()
-        logging.info(f"{item_id}_{image_type} 처리 완료")
+        if isinstance(data, dict) and '_id' in data and 'images' in data and isinstance(data['images'], dict):
+            image_id = data['_id']  # _id 값 저장
+            urls = []
+            # thumbnail, description, product URL 추가
+            urls.append(('thumbnail', data['images']['thumbnail']))
+            urls.extend(('description', desc) for desc in data['images']['description'])
+            urls.extend(('product', prod) for prod in data['images']['product'])
+            
+            thumbnail_count = 0
+            product_count = 0
+            description_count = 0
 
-def process_message(data):
-    item_id = data['_id']
-    images = data['images']
-    
-    # 썸네일 이미지 처리
-    if 'thumbnail' in images:
-        process_image(images['thumbnail'], item_id, '썸네일')
-    
-    # 설명 이미지 처리
-    for i, img_url in enumerate(images.get('description', []), 1):
-        process_image(img_url, item_id, f'설명_{i}')
-        logging.info(f"설명 이미지 {i} 처리 완료")
-    update_status(item_id, '설명_모두_완료')
-    
-    # 제품 이미지 처리
-    for i, img_url in enumerate(images.get('product', []), 1):
-        process_image(img_url, item_id, f'제품_{i}')
-        logging.info(f"제품 이미지 {i} 처리 완료")
-    update_status(item_id, '제품_모두_완료')
-    
-    # 워터마크 이미지 처리 (필요한 경우)
-    if 'watermark' in images:
-        process_image(images['watermark'], item_id, '워터마크')
-    
-    # 모든 처리 완료
-    update_status(item_id, '모든_처리_완료')
+            for img_type, url in urls:
+                # 이미지 다운로드
+                response = requests.get(url)
+                image_data = np.array(bytearray(response.content), dtype=np.uint8)
+                image = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
+                
+                faces = detect_faces(image, cascade_file)
+                
+                if len(faces) == 0:
+                    # 얼굴 인식 실패 시 중앙 기준으로 자르기
+                    print(f"얼굴 인식 실패 {url}. 중앙 편집.")
+                    crop_3_4 = crop_face(image, (0, 0, image.shape[1], image.shape[0]), '3:4')  # 전체 이미지 자르기
+                    webp_file_name_3_4 = f"{output_dir}/{image_id}_{img_type}_center_cropped_{url.split('/')[-1].split('.')[0]}_3_4.webp"
+                    cv2.imwrite(webp_file_name_3_4, crop_3_4)  # WebP 형식으로 저장
+                    print(f"변환 완료: {webp_file_name_3_4}")  # 저장 완료 메시지 출력
+                    
+                    crop_1_1 = crop_face(image, (0, 0, image.shape[1], image.shape[0]), '1:1')  # 전체 이미지 자르기
+                    webp_file_name_1_1 = f"{output_dir}/{image_id}_{img_type}_center_cropped_{url.split('/')[-1].split('.')[0]}_1_1.webp"
+                    cv2.imwrite(webp_file_name_1_1, crop_1_1)  # WebP 형식으로 저장
+                    print(f"변환 완료: {webp_file_name_1_1}")  # 저장 완료 메시지 출력
+                else:
+                    for j, face in enumerate(faces):
+                        # 3:4 비율로 자르기
+                        crop_3_4 = crop_face(image, face, '3:4')
+                        webp_file_name_3_4 = f"{output_dir}/{image_id}_{img_type}_face_{url.split('/')[-1].split('.')[0]}_3_4.webp"
+                        cv2.imwrite(webp_file_name_3_4, crop_3_4)  # WebP 형식으로 저장
+                        print(f"변환 완료: {webp_file_name_3_4}")  # 저장 완료 메시지 출력
+                        
+                        # 1:1 비율로 자르기
+                        crop_1_1 = crop_face(image, face, '1:1')
+                        webp_file_name_1_1 = f"{output_dir}/{image_id}_{img_type}_face_{url.split('/')[-1].split('.')[0]}_1_1.webp"
+                        cv2.imwrite(webp_file_name_1_1, crop_1_1)  # WebP 형식으로 저장
+                        print(f"변환 완료: {webp_file_name_1_1}")  # 저장 완료 메시지 출력
+                
+                print(f"Processed {url}: Found {len(faces)} faces")
+                
+                if img_type == 'thumbnail':
+                    thumbnail_count += 1
+                    # 섭네일 처리 완료 알림
+                    if thumbnail_count == 1:  # 섭네일이 하나이므로 1로 설정
+                        print("모든 섭네일 이미지 처리 완료.")
+                elif img_type == 'description':
+                    description_count += 1
+                    # 설명 이미지 처리 완료 알림
+                    if description_count == len(data['images']['description']):  # 모든 설명 처리 후
+                        print("모든 설명 이미지 처리 완료.")
+                elif img_type == 'product':
+                    product_count += 1
+                    # 상품 이미지 처리 완료 알림
+                    if product_count == len(data['images']['product']):  # 모든 상품 처리 후
+                        print("모든 상품 이미지 처리 완료.")
 
-def main():
-    # JSON 파일에서 테스트 데이터 읽기
-    with open('test_data.json', 'r') as file:
-        test_data = json.load(file)
+            # 모든 이미지 처리 후 알림 출력
+            print(f"모든 섭네일 이미지 처리 완료: {thumbnail_count}개")
+            print(f"모든 상품 이미지 처리 완료: {product_count}개")
+            print(f"모든 설명 이미지 처리 완료: {description_count}개")
+        else:
+            raise ValueError("Invalid JSON structure: 'images' should be a dictionary.")
     
-    # 테스트 데이터 처리
-    process_message(test_data)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    total_download_time = 0
+    total_processing_time = 0
+    start_time = time.time()
+
+    for i, url in enumerate(urls):
+        try:
+            image_data, download_time = download_image(url)
+            total_download_time += download_time
+
+            start_processing = time.time()
+            image = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
+            faces = detect_faces(image, cascade_file)
+            
+            for j, face in enumerate(faces):
+                # 3:4 ratio crop
+                crop_3_4 = crop_face(image, face, '3:4')
+                cv2.imwrite(str(output_dir / f"face_{i}_{j}_3_4.jpg"), crop_3_4)
+                
+                # 1:1 ratio crop
+                crop_1_1 = crop_face(image, face, '1:1')
+                cv2.imwrite(str(output_dir / f"face_{i}_{j}_1_1.jpg"), crop_1_1)
+            
+            total_processing_time += time.time() - start_processing
+            
+            print(f"Processed {url}: Found {len(faces)} faces")
+        except Exception as e:
+            print(f"Error processing {url}: {str(e)}")
+
+    total_time = time.time() - start_time
+    other_time = total_time - (total_download_time + total_processing_time)
+
+    # 결과를 텍스트 파일에 저장
+    log_file = output_dir / "processing_time.txt"
+    with open(log_file, "w") as f:
+        f.write(f"파일 다운로드 시간 (네트워크 지연): {total_download_time:.2f} 초\n")
+        f.write(f"이미지 처리 시간: {total_processing_time:.2f} 초\n")
+        f.write(f"기타 처리 시간 (라이브러리 로딩 등): {other_time:.2f} 초\n")
+        f.write(f"총 처리 시간: {total_time:.2f} 초\n")
 
 if __name__ == "__main__":
-    main()
+    input_file = "/Users/inwonback/Documents/본업/transformation/source.json"  # JSON 파일 경로로 수정
+    output_dir = "output_faces"
+    cascade_file = "lbpcascade_animeface.xml"
+    process_urls(input_file, output_dir, cascade_file)
