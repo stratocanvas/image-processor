@@ -31,27 +31,26 @@ def crop_face(image, face, ratio):
     x, y, w, h = face
     center_x, center_y = x + w // 2, y + h // 2
 
-    if ratio == '3:4':
-        if img_w / img_h > 3 / 4:  # 이미지가 3:4보다 가로로 길 경우
-            new_h = img_h
-            new_w = int(new_h * 3 / 4)
-        else:  # 이미지가 3:4보 가로로 길 경우
-            new_w = img_w
-            new_h = int(new_w * 4 / 3)
+    new_w, new_h = 0, 0  # 초기화
+
+    if ratio == '4:3':
+        new_h = h  # 얼굴 높이를 기준으로
+        new_w = int(new_h * 4 / 3)
     
     elif ratio == '1:1':
-        new_h = new_w = min(img_h, img_w)
-    
+        new_h = new_w = min(h, w)
+
+    # 크롭 영역 계산
     left = max(center_x - new_w // 2, 0)
     top = max(center_y - new_h // 2, 0)
     right = min(left + new_w, img_w)
     bottom = min(top + new_h, img_h)
-    
-    # 이미지 경계를 벗어나지 않도록 조정
-    if right - left < new_w:
-        left = max(right - new_w, 0)
-    if bottom - top < new_h:
-        top = max(bottom - new_h, 0)
+
+    # 크롭 영역이 유효한지 확인
+    if right <= left or bottom <= top:
+        print("크롭 영역이 유효하지 않습니다.")
+        return None  # 빈 이미지 반환
+
     return image[top:bottom, left:right]
 
 def process_urls(input_file, output_dir, cascade_file):
@@ -78,7 +77,8 @@ def process_urls(input_file, output_dir, cascade_file):
                 image_data = np.array(bytearray(response.content), dtype=np.uint8)
                 image = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
                 original_name = os.path.basename(urlparse(url).path)  # 원래 파일 이름 추출
-                
+                original_name_no_ext = os.path.splitext(original_name)[0]  # 확장자 제거
+
                 if img_type == 'description':
                     # 얼굴 감지 생략
                     width, height = image.shape[1], image.shape[0]
@@ -88,13 +88,59 @@ def process_urls(input_file, output_dir, cascade_file):
                         for d in range(total_parts):
                             part_height = min(8192, height - d * 8192)
                             crop_part = image[d * 8192: d * 8192 + part_height, :]
-                            webp_file_name_desc = f"{output_dir}/{original_name}-w{width}-h{height}-d{d+1}-{total_parts}.webp"
-                            cv2.imwrite(webp_file_name_desc, crop_part)  # 분할된 이미지 저장
-                            print(f"변환 완료: {webp_file_name_desc}")  # 저장 완료 메시지 출력
+                            webp_file_name_desc = f"{output_dir}/{original_name_no_ext}-w{width}-h{height}-d{d+1}-{total_parts}"  # 확장자 제거
+                            cv2.imwrite(webp_file_name_desc + ".webp", crop_part)  # 분할된 이미지 저장
+                            print(f"변환 완료: {webp_file_name_desc}.webp")  # 저장 완료 메시지 출력
                     else:
-                        webp_file_name_desc = f"{output_dir}/{original_name}-w{width}-h{height}.webp"
-                        cv2.imwrite(webp_file_name_desc, image)  # 설명 이미지 저장
-                        print(f"변환 완료: {webp_file_name_desc}")  # 저장 완료 메시지 출력
+                        webp_file_name_desc = f"{output_dir}/{original_name_no_ext}-w{width}-h{height}"  # 확장자 제거
+                        cv2.imwrite(webp_file_name_desc + ".webp", image)  # 설명 이미지 저장
+                        print(f"변환 완료: {webp_file_name_desc}.webp")  # 저장 완료 메시지 출력
+                    continue  # 다음 이미지로 넘어감
+                
+                if img_type == 'thumbnail':
+                    # 얼굴 감지
+                    faces = detect_faces(image, cascade_file)
+                    
+                    if len(faces) > 0:
+                        # 4:3 비율로 얼굴 중심 크롭
+                        crop_4_3 = crop_face(image, faces[0], '4:3')
+                        webp_file_name_thumb = f"{output_dir}/{original_name_no_ext}"  # 확장자 제거
+                        cv2.imwrite(webp_file_name_thumb + ".webp", crop_4_3)  # 크기 조정 후 저장
+                        print(f"변환 완료: {webp_file_name_thumb}.webp")  # 저장 완료 메시지 출력
+                    else:
+                        # 얼굴 인식 실패 시 중앙 기준으로 4:3 비율로 자르기
+                        print(f"얼굴 인식 실패 {url}. 중앙 편집.")
+                        crop_center = crop_face(image, (0, 0, image.shape[1], image.shape[0]), '4:3')
+                        webp_file_name_thumb = f"{output_dir}/{original_name_no_ext}"  # 확장자 제거
+                        cv2.imwrite(webp_file_name_thumb + ".webp", crop_center)  # 크기 조정 후 저장
+                        print(f"변환 완료: {webp_file_name_thumb}.webp")  # 저장 완료 메시지 출력
+                    
+                    continue  # 다음 이미지로 넘어감
+                
+                if img_type == 'product':
+                    # 얼굴 감지
+                    faces = detect_faces(image, cascade_file)
+                    
+                    if len(faces) > 0:
+                        for face in faces:
+                            # 1:1 비율로 자르기
+                            crop_1_1 = crop_face(image, face, '1:1')
+                            if crop_1_1 is not None:  # 크롭이 유효한 경우에만 저장
+                                webp_file_name_1_1 = f"{output_dir}/{original_name_no_ext}"  # 확장자 제거
+                                cv2.imwrite(webp_file_name_1_1 + ".webp", crop_1_1)  # 크기 조정 후 저장
+                                print(f"변환 완료: {webp_file_name_1_1}.webp")  # 저장 완료 메시지 출력
+                            else:
+                                print(f"크롭 영역이 유효하지 않습니다: {url}")
+                    else:
+                        # 얼굴 인식 실패 시 중앙 기준으로 1:1 비율로 자르기
+                        print(f"상품 이미지에서 얼굴 인식 실패 {url}. 중앙 편집.")
+                        crop_center = crop_face(image, (0, 0, image.shape[1], image.shape[0]), '1:1')
+                        if crop_center is not None:  # 중앙 크롭이 유효한 경우에만 저장
+                            webp_file_name_1_1 = f"{output_dir}/{original_name_no_ext}"  # 확장자 제거
+                            cv2.imwrite(webp_file_name_1_1 + ".webp", crop_center)  # 크기 조정 후 저장
+                            print(f"변환 완료: {webp_file_name_1_1}.webp")  # 저장 완료 메시지 출력
+                        else:
+                            print(f"중앙 크롭 영역이 유효하지 않습니다: {url}")
                     continue  # 다음 이미지로 넘어감
                 
                 faces = detect_faces(image, cascade_file)
@@ -103,16 +149,16 @@ def process_urls(input_file, output_dir, cascade_file):
                     # 얼굴 인식 실패 시 중앙 기준으로 자르기
                     print(f"얼굴 인식 실패 {url}. 중앙 편집.")
                     crop_3_4 = crop_face(image, (0, 0, image.shape[1], image.shape[0]), '3:4')  # 전체 이미지 자르기
-                    webp_file_name_3_4 = f"{output_dir}/{original_name}_3_4.webp"  # 파일 이름 수정
-                    cv2.imwrite(webp_file_name_3_4, crop_3_4)  # 크기 조정 후 저장
-                    print(f"변환 완료: {webp_file_name_3_4}")  # 저장 완료 메시지 출력
+                    webp_file_name_3_4 = f"{output_dir}/{original_name_no_ext}"  # 파일 이름 수정 (확장자 제거)
+                    cv2.imwrite(webp_file_name_3_4 + ".webp", crop_3_4)  # 크기 조정 후 저장
+                    print(f"변환 완료: {webp_file_name_3_4}.webp")  # 저장 완료 메시지 출력
                     
                     crop_1_1 = crop_face(image, (0, 0, image.shape[1], image.shape[0]), '1:1')  # 전체 이미지 자르기
-                    webp_file_name_1_1 = f"{output_dir}/{original_name}_1_1.webp"  # 파일 이름 수정
-                    cv2.imwrite(webp_file_name_1_1, crop_1_1)  # 크기 조정 후 저장
-                    print(f"변환 완료: {webp_file_name_1_1}")  # 저장 완료 메시지 출력
+                    webp_file_name_1_1 = f"{output_dir}/{original_name_no_ext}"  # 파일 이름 수정 (확장자 제거)
+                    cv2.imwrite(webp_file_name_1_1 + ".webp", crop_1_1)  # 크기 조정 후 저장
+                    print(f"변환 완료: {webp_file_name_1_1}.webp")  # 저장 완료 메시지 출력
                     
-                    # 이미지 분할 처리
+                    # 이미지 분할 처
                     if (image.shape[1] + image.shape[0]) > 8192:  # 가로세로 합이 8192px 이상일 때
                         height, width = image.shape[:2]
                         total_parts = (height // 8192) + (width // 8192) + 1
@@ -121,23 +167,23 @@ def process_urls(input_file, output_dir, cascade_file):
                             part_height = min(8192, height - d * 8192)
                             part_width = min(8192, width - d * 8192)
                             crop_part = image[d * 8192: d * 8192 + part_height, d * 8192: d * 8192 + part_width]
-                            webp_file_name_face = f"{output_dir}/{original_name}_3_4-d{d+1}-{total_parts}.webp"
-                            cv2.imwrite(webp_file_name_face, crop_part)  # 분할된 이미지 저장
-                            print(f"변환 완료: {webp_file_name_face}")  # 저장 완료 메시지 출력
+                            webp_file_name_face = f"{output_dir}/{original_name_no_ext}_3_4-d{d+1}-{total_parts}"  # 확장자 제거
+                            cv2.imwrite(webp_file_name_face + ".webp", crop_part)  # 분할된 이미지 저장
+                            print(f"변환 완료: {webp_file_name_face}.webp")  # 저장 완료 메시지 출력
                 
                 else:
                     for j, face in enumerate(faces):
-                        # 3:4 비율로 자르기
+                        # 3:4 율로 자르기
                         crop_3_4 = crop_face(image, face, '3:4')
-                        webp_file_name_3_4 = f"{output_dir}/{original_name}-3_4.webp"  # 원래 이름 기반으로 수정
-                        cv2.imwrite(webp_file_name_3_4, crop_3_4)  # 크기 조정 후 저장
-                        print(f"변환 완료: {webp_file_name_3_4}")  # 저장 완료 메시지 출력
+                        webp_file_name_3_4 = f"{output_dir}/{original_name_no_ext}"  # 원래 이름 기반으로 수정 (확장자 제거)
+                        cv2.imwrite(webp_file_name_3_4 + ".webp", crop_3_4)  # 크기 조정 후 저장
+                        print(f"변환 완료: {webp_file_name_3_4}.webp")  # 저장 완료 메시지 출력
                         
                         # 1:1 비율로 자르기
                         crop_1_1 = crop_face(image, face, '1:1')
-                        webp_file_name_1_1 = f"{output_dir}/{original_name}-1_1.webp"  # 원래 이름 기반으로 수정
-                        cv2.imwrite(webp_file_name_1_1, crop_1_1)  # 크기 조정 후 저장
-                        print(f"변환 완료: {webp_file_name_1_1}")  # 저장 완료 메시지 출력
+                        webp_file_name_1_1 = f"{output_dir}/{original_name_no_ext}"  # 원래 이름 기반으로 수정 (확장자 제거)
+                        cv2.imwrite(webp_file_name_1_1 + ".webp", crop_1_1)  # 크기 조정 후 저장
+                        print(f"변환 완료: {webp_file_name_1_1}.webp")  # 저장 완료 메시지 출력
                         
                         # 이미지 분할 처리
                         if (image.shape[1] + image.shape[0]) > 8192:  # 가로세로 합이 8192px 이상일 때
@@ -148,9 +194,9 @@ def process_urls(input_file, output_dir, cascade_file):
                                 part_height = min(8192, height - d * 8192)
                                 part_width = min(8192, width - d * 8192)
                                 crop_part = image[d * 8192: d * 8192 + part_height, d * 8192: d * 8192 + part_width]
-                                webp_file_name_face = f"{output_dir}/{original_name}_3_4-d{d+1}-{total_parts}.webp"
-                                cv2.imwrite(webp_file_name_face, crop_part)  # 분할된 이미지 저장
-                                print(f"변환 완료: {webp_file_name_face}")  # 저장 완료 메시지 출력
+                                webp_file_name_face = f"{output_dir}/{original_name_no_ext}_3_4-d{d+1}-{total_parts}"  # 확장자 제거
+                                cv2.imwrite(webp_file_name_face + ".webp", crop_part)  # 분할된 이미지 저장
+                                print(f"변환 완료: {webp_file_name_face}.webp")  # 저장 완료 메시지 출력
                 
                 print(f"Processed {url}: Found {len(faces)} faces")
                 
@@ -169,12 +215,12 @@ def process_urls(input_file, output_dir, cascade_file):
                     product_count += 1
                     # 상품 이미지 처리 완료 알림
                     
-                    if product_count == len(data['images']['product']):  # 모든 상품 처리 후
+                    if product_count == len(data['images']['product']):  # 모든 품 처리 후
                         print("모든 상품 이미지 처리 완료.")
 
             # 모든 이미지 처리 후 알림 출력
             print(f"모든 섭네일 이미지 처리 완료: {thumbnail_count}개")
-            print(f"모든 상품 이미지 처리 완료: {product_count}개")
+            print(f"모든 상품 이미지 처리 료: {product_count}개")
             print(f"모든 설명 이미지 처리 완료: {description_count}개")
         else:
             raise ValueError("Invalid JSON structure: 'images' should be a dictionary.")
@@ -224,7 +270,7 @@ def process_urls(input_file, output_dir, cascade_file):
 if __name__ == "__main__":
     # 현재 스크립트의 디렉토 경로
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    input_file = os.path.join(current_dir, 'source.json')  # 상대 경로로 수정
+    input_file = os.path.join(current_dir, 'source.json')  # 상대 경로 수정
     output_dir = "output_faces"
     cascade_file = "lbpcascade_animeface.xml"
     process_urls(input_file, output_dir, cascade_file)
