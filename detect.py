@@ -23,7 +23,7 @@ def detect_faces(image, cascade_file):
     if face_cascade.empty():
         raise IOError('Unable to load the face cascade classifier xml file')
     
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3, minSize=(20, 20))
     return faces
 
 def crop_face(image, face, ratio):
@@ -102,18 +102,57 @@ def process_urls(input_file, output_dir, cascade_file):
                     faces = detect_faces(image, cascade_file)
                     
                     if len(faces) > 0:
-                        # 4:3 비율로 얼굴 중심 크롭
-                        crop_4_3 = crop_face(image, faces[0], '4:3')
-                        webp_file_name_thumb = f"{output_dir}/{original_name_no_ext}"  # 확장자 제거
-                        cv2.imwrite(webp_file_name_thumb + ".webp", crop_4_3)  # 크기 조정 후 저장
-                        print(f"변환 완료: {webp_file_name_thumb}.webp")  # 저장 완료 메시지 출력
+                        # 모든 얼굴을 포함하는 영역 계산
+                        min_x = min(face[0] for face in faces)
+                        min_y = min(face[1] for face in faces)
+                        max_x = max(face[0] + face[2] for face in faces)
+                        max_y = max(face[1] + face[3] for face in faces)
+
+                        # 영역의 중심점 계산
+                        center_x = (min_x + max_x) // 2
+                        center_y = (min_y + max_y) // 2
+
+                        # 4:3 비율로 크롭할 영역 계산
+                        width = max_x - min_x
+                        height = max_y - min_y
+                        if width / height > 4 / 3:
+                            new_height = height
+                            new_width = int(new_height * 4 / 3)
+                        else:
+                            new_width = width
+                            new_height = int(new_width * 3 / 4)
+
+                        # 크롭 영역 계산
+                        left = max(center_x - new_width // 2, 0)
+                        top = max(center_y - new_height // 2, 0)
+                        right = min(left + new_width, image.shape[1])
+                        bottom = min(top + new_height, image.shape[0])
+
+                        # 크롭
+                        crop_4_3 = image[top:bottom, left:right]
+
+                        # 저장
+                        webp_file_name_thumb = f"{output_dir}/{original_name_no_ext}"
+                        cv2.imwrite(webp_file_name_thumb + ".webp", crop_4_3)
+                        print(f"변환 완료: {webp_file_name_thumb}.webp")
                     else:
                         # 얼굴 인식 실패 시 중앙 기준으로 4:3 비율로 자르기
                         print(f"얼굴 인식 실패 {url}. 중앙 편집.")
-                        crop_center = crop_face(image, (0, 0, image.shape[1], image.shape[0]), '4:3')
-                        webp_file_name_thumb = f"{output_dir}/{original_name_no_ext}"  # 확장자 제거
-                        cv2.imwrite(webp_file_name_thumb + ".webp", crop_center)  # 크기 조정 후 저장
-                        print(f"변환 완료: {webp_file_name_thumb}.webp")  # 저장 완료 메시지 출력
+                        height, width = image.shape[:2]
+                        if width / height > 4 / 3:
+                            new_height = height
+                            new_width = int(new_height * 4 / 3)
+                        else:
+                            new_width = width
+                            new_height = int(new_width * 3 / 4)
+
+                        left = (width - new_width) // 2
+                        top = (height - new_height) // 2
+                        crop_center = image[top:top+new_height, left:left+new_width]
+                        
+                        webp_file_name_thumb = f"{output_dir}/{original_name_no_ext}"
+                        cv2.imwrite(webp_file_name_thumb + ".webp", crop_center)
+                        print(f"변환 완료: {webp_file_name_thumb}.webp")
                     
                     continue  # 다음 이미지로 넘어감
                 
@@ -123,24 +162,58 @@ def process_urls(input_file, output_dir, cascade_file):
                     
                     if len(faces) > 0:
                         for face in faces:
-                            # 1:1 비율로 자르기
-                            crop_1_1 = crop_face(image, face, '1:1')
-                            if crop_1_1 is not None:  # 크롭이 유효한 경우에만 저장
-                                webp_file_name_1_1 = f"{output_dir}/{original_name_no_ext}"  # 확장자 제거
-                                cv2.imwrite(webp_file_name_1_1 + ".webp", crop_1_1)  # 크기 조정 후 저장
-                                print(f"변환 완료: {webp_file_name_1_1}.webp")  # 저장 완료 메시지 출력
-                            else:
-                                print(f"크롭 영역이 유효하지 않습니다: {url}")
+                            # 1. 얼굴 중심의 1:1 크롭 (좁은 영역)
+                            crop_1_1_face = crop_face(image, face, '1:1')
+                            if crop_1_1_face is not None:
+                                webp_file_name_1_1_face = f"{output_dir}/{original_name_no_ext}"
+                                cv2.imwrite(webp_file_name_1_1_face + ".webp", crop_1_1_face)
+                                print(f"변환 완료: {webp_file_name_1_1_face}.webp")
+                            
+                            # 2. 가능한 가장 큰 1:1 크롭 (얼굴 포함)
+                            x, y, w, h = face
+                            center_x, center_y = x + w // 2, y + h // 2
+                            side_length = min(image.shape[0], image.shape[1])
+                            
+                            # 얼굴이 1:1 크롭 안에 들어가도록 조정
+                            left = max(0, center_x - side_length // 2)
+                            top = max(0, center_y - side_length // 2)
+                            right = min(image.shape[1], left + side_length)
+                            bottom = min(image.shape[0], top + side_length)
+                            
+                            # 크롭 영역이 이미지 경계를 벗어나지 않도록 조정
+                            if right - left < side_length:
+                                left = max(0, right - side_length)
+                            if bottom - top < side_length:
+                                top = max(0, bottom - side_length)
+                            
+                            crop_1_1_wide = image[top:bottom, left:right]
+                            if crop_1_1_wide is not None and crop_1_1_wide.size > 0:
+                                webp_file_name_1_1_wide = f"{output_dir}/{original_name_no_ext}-t"
+                                cv2.imwrite(webp_file_name_1_1_wide + ".webp", crop_1_1_wide)
+                                print(f"변환 완료: {webp_file_name_1_1_wide}.webp")
                     else:
-                        # 얼굴 인식 실패 시 중앙 기준으로 1:1 비율로 자르기
+                        # 얼굴 인식 실패 시 중앙 기준으로 두 가지 1:1 비율 크롭 생성
                         print(f"상품 이미지에서 얼굴 인식 실패 {url}. 중앙 편집.")
-                        crop_center = crop_face(image, (0, 0, image.shape[1], image.shape[0]), '1:1')
-                        if crop_center is not None:  # 중앙 크롭이 유효한 경우에만 저장
-                            webp_file_name_1_1 = f"{output_dir}/{original_name_no_ext}"  # 확장자 제거
-                            cv2.imwrite(webp_file_name_1_1 + ".webp", crop_center)  # 크기 조정 후 저장
-                            print(f"변환 완료: {webp_file_name_1_1}.webp")  # 저장 완료 메시지 출력
-                        else:
-                            print(f"중앙 크롭 영역이 유효하지 않습니다: {url}")
+                        
+                        # 1. 좁은 영역의 1:1 크롭 (이미지의 짧은 쪽 길이 사용)
+                        short_side = min(image.shape[0], image.shape[1])
+                        crop_center_face = crop_face(image, (0, 0, short_side, short_side), '1:1')
+                        if crop_center_face is not None:
+                            webp_file_name_1_1_face = f"{output_dir}/{original_name_no_ext}"
+                            cv2.imwrite(webp_file_name_1_1_face + ".webp", crop_center_face)
+                            print(f"변환 완료: {webp_file_name_1_1_face}.webp")
+                        
+                        # 2. 가장 큰 1:1 크롭 (이미지 중앙 기준)
+                        side_length = min(image.shape[0], image.shape[1])
+                        center_x, center_y = image.shape[1] // 2, image.shape[0] // 2
+                        left = center_x - side_length // 2
+                        top = center_y - side_length // 2
+                        crop_center_wide = image[top:top+side_length, left:left+side_length]
+                        if crop_center_wide is not None and crop_center_wide.size > 0:
+                            webp_file_name_1_1_wide = f"{output_dir}/{original_name_no_ext}-t"
+                            cv2.imwrite(webp_file_name_1_1_wide + ".webp", crop_center_wide)
+                            print(f"변환 완료: {webp_file_name_1_1_wide}.webp")
+                    
                     continue  # 다음 이미지로 넘어감
                 
                 faces = detect_faces(image, cascade_file)
@@ -215,7 +288,7 @@ def process_urls(input_file, output_dir, cascade_file):
                     product_count += 1
                     # 상품 이미지 처리 완료 알림
                     
-                    if product_count == len(data['images']['product']):  # 모든 품 처리 후
+                    if product_count == len(data['images']['product']):  # 모 품 처리 후
                         print("모든 상품 이미지 처리 완료.")
 
             # 모든 이미지 처리 후 알림 출력
