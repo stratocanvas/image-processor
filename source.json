@@ -1,7 +1,7 @@
 {
     "_id": "TEST_ID_001",
     "images": {
-        "thumbnail": "https://res09.bignox.com/appcenter/kr/2021/11/apparent2.jpg",
+        "thumbnail": "https://d2i2w6ttft7yxi.cloudfront.net/thumbnail/ts320240802034903_1123802_rs.jpg",
 
         "description": [
             "https://i.namu.wiki/i/ujWyCRh8LnPuni7XcyEy4kPJ_XdsgDPCJpLbWqN3rgSxvVlaj9uViEAtfQPWzR_0TixksrT-FuVN2h8WhXtdrQ.webp",
@@ -11,7 +11,19 @@
         "product": [
             "https://kiteapp.s3.ap-northeast-2.amazonaws.com/test/GSWwZ0AWUAAM2T21.jpg",
             "https://kiteapp.s3.ap-northeast-2.amazonaws.com/test/GSWwWnaXoAAeegN1.jpg",
-            "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQDiuUO82UVePo2MweEE2cflMQiUo9ibTa27A&s"
+            "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQDiuUO82UVePo2MweEE2cflMQiUo9ibTa27A&s",
+            "https://dcimg4.dcinside.co.kr/viewimage.php?id=3dafdf2ce0d12cab76&no=24b0d769e1d32ca73de983fa11d02831c6c0b61130e4349ff064c41af0d3cfaa6a249bb9689408f24d15b17a5b50f1a03a81b64f2dd2526a2eda256a84432f1e3441ba2e4ada4fcb278f25b899bbe7ecbd",
+            "https://pbs.twimg.com/media/FhXWeMGUoAA-8yx?format=jpg&name=4096x4096",
+            "https://api.kitebooth.com/storage/v1/object/public/product/option/f692ffa5-e3ee-4c12-86b5-50fe8c5621e6-c(91828c)-w(380)-h(415).png",
+            "https://dcimg4.dcinside.co.kr/viewimage.php?id=3dafdf2ce0d12cab76&no=24b0d769e1d32ca73de983fa11d02831c6c0b61130e4349ff064c41af0dccfaa0bc88f208486feb0bbb43ee4615e53a8d654589aae45a81bbcf8a54a8c46a359c8aaa178df190522278dcfaf5fa786c3fae7eb3736982c1dfd570e94196d5233406e6c6e3eb30c64c7",
+            "https://dcimg4.dcinside.co.kr/viewimage.php?id=3dafdf2ce0d12cab76&no=24b0d769e1d32ca73de983fa11d02831c6c0b61130e4349ff064c41af0dccfaa0bc88f208486feb0bbb43ee4615c52a9196d65d3c5cd6975eae5045e9b1eaf081f4aa7b2",
+            "https://mblogthumb-phinf.pstatic.net/MjAyMzA3MTFfODQg/MDAxNjg5MDY0ODc2MDc3.pf8DDWa1EE4BC_6PdALjqR_RM6zC0ryVFKHXza5-x48g.t8jJrTlg7onw9ZRUq4oylWpqLubNNwtMX_UTSe3R7bog.PNG.sniperriflesr2/1.png?type=w800",
+            "https://api.kitebooth.com/storage/v1/object/public/product/option/8fb73773-5658-47a1-b46b-e073383f1c38-c(669ca4)-w(721)-h(695).jpeg",
+            "https://www.kitebooth.com/_next/image?url=https%3A%2F%2Fapi.kitebooth.com%2Fstorage%2Fv1%2Fobject%2Fpublic%2Fproduct%2Foption%2F85f57cee-6533-4100-8903-6f0ecf649505-c(a07660)-w(721)-h(695).jpeg&w=3840&q=75",
+            "https://i.pinimg.com/736x/00/f3/b0/00f3b0c2b42a690cd91d5d51b1020747.jpg",
+            "https://image.fmkorea.com/files/attach/new4/20240626/7184641312_2895716_805433a521f906a67fc61ef1dda61cf1.jpg",
+            "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQO-BeuKanmiXNHa-uGTYIqIb1NPuYpvuqcKw&s"
+            
         ],
         "watermark": "https://kiteapp.s3.ap-northeast-2.amazonaws.com/test/watermark.jpg"
     }
