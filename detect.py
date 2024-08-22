@@ -308,7 +308,7 @@ def receive_sqs_messages(queue_url):
                 print(f"오류 발생: {str(e)}")
                 error_occurred = True
 
-queue_url = 'sqs url'
+queue_url = 'queue_url'
 receive_sqs_messages(queue_url)
 
 def crop_face(image, face, ratio):
