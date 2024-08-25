@@ -1,6 +1,13 @@
-## Kite Image Transformation
+# Kite Image Transformation
 Kite 서비스용 이미지 처리 레이어
 AWS Lambda에서 구동
+
+## 기능
+- [x] 이미지에서 캐릭터 얼굴 인식하여 인식된 얼굴 중심으로 크롭
+- [x] 8192px 초과 이미지에 대해 분할 생성
+- [x] 이미지에서 주요 색상 추출하여 파일명에 반영
+- [x] 이미지를 Webp 포맷으로 변환
+- [ ] 사용자 지정 워터마크 적용
 
 ## 사용 라이브러리
 - OpenCV: 이미지 처리 전반
