@@ -47,7 +47,6 @@ def save_as_webp(image, file_path, quality=80):
     print(new_file_name)
     return new_file_name
 
-
 # 인포 이미지 처리
 def process_description_image(image, output_dir, original_name_no_ext):
     height, width = image.shape[:2]
@@ -71,6 +70,7 @@ def process_description_image(image, output_dir, original_name_no_ext):
     
     return webp_file_names
 
+
 # 현수막 이미지
 def process_thumbnail_image(image, output_dir, original_name_no_ext, cascade_file):
     faces = detect_faces(image, cascade_file) # 얼굴 감지
@@ -84,6 +84,7 @@ def process_thumbnail_image(image, output_dir, original_name_no_ext, cascade_fil
         right = min(left + new_width, width)
         bottom = height
         crop = image[top:bottom, left:right] # 감지된 얼굴 기준으로 3/4 비율 크롭
+        
     else: # 얼굴이 감지되지 않은 경우
         new_width = int(height * 3 / 4)
         left = (width - new_width) // 2
@@ -93,6 +94,7 @@ def process_thumbnail_image(image, output_dir, original_name_no_ext, cascade_fil
     result = save_as_webp(crop, webp_file_name) # WEBP 저장
     del crop # GC  
     return [result]
+
 
 # 굿즈 이미지
 def process_product_image(image, output_dir, original_name_no_ext, cascade_file):
@@ -121,6 +123,7 @@ def process_product_image(image, output_dir, original_name_no_ext, cascade_file)
         
         # 1:1 비율로 얼굴 부분 크롭
         crop = image[top:bottom, left:right]
+        
     else: # 유효한 얼굴이 감지되지 않은 경우
         side_length = min(width, height)
         center_x = width // 2
@@ -225,10 +228,12 @@ def process_record(record, output_dir, cascade_file, bucket_name):
 
         results = []
         with ThreadPoolExecutor(max_workers=10) as executor:
+
             download_futures = {executor.submit(download_image_from_s3, bucket_name, s3_key): (img_type, s3_key) for img_type, s3_key in s3_paths}
         
             for future in as_completed(download_futures):
                 img_type, s3_key = download_futures[future]
+
                 image_data, download_time, s3_path = future.result()
                 process_future = executor.submit(process_image, img_type, image_data, s3_path, output_dir, cascade_file)
                 results.append((process_future, image_id))
@@ -268,7 +273,9 @@ def lambda_handler(event, context):
                 processing_times.append(processing_time)
                 for local_path in processed_files:
                     relative_path = os.path.relpath(local_path, output_dir)
+
                     s3_path = os.path.join('booth', image_id, relative_path) # booth 폴더 내 _id별로 폴더 구분해서 저장
+
                     upload_futures.append(executor.submit(upload_to_s3, local_path, bucket_name, s3_path))
 
         for future in as_completed(upload_futures):
@@ -276,13 +283,12 @@ def lambda_handler(event, context):
             upload_times.append(upload_time)
 
     total_time = time.time() - start_time
-
     max_processing_time = max(processing_times) if processing_times else 0
     max_upload_time = max(upload_times) if upload_times else 0
 
     print(f"최대 이미지 처리 시간 (병렬 처리): {max_processing_time:.2f} 초")
     print(f"최대 S3 업로드 시간 (병렬 처리): {max_upload_time:.2f} 초")
-    print(f"총 리 시간 (렬 처리 포함): {total_time:.2f} 초")
+    print(f"총 처리 시간 (병렬 처리 포함): {total_time:.2f} 초")
 
     gc.collect()
 
@@ -290,3 +296,4 @@ def lambda_handler(event, context):
         'statusCode': 200,
         'body': json.dumps('Processing completed')
     }
+
