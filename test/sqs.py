@@ -7,7 +7,7 @@ import json
 # AWS 자격 증명 설정
 aws_access_key_id = 'aws_access_key_id'
 aws_secret_access_key = 'aws_secret_access_key'
-region_name = 'ap-northeast-2'  # 서울 리전
+region_name = '리전'  # 서울 리전
 
 # SQS 클라이언트 생성
 sqs = boto3.client(
