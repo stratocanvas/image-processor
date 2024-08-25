@@ -10,6 +10,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 import gc
+from vibrant import Vibrant
 
 s3_client = boto3.client('s3')
 
@@ -31,26 +32,44 @@ def detect_faces(image, cascade_file):
 
 # WEBP 변환
 def save_as_webp(image, file_path, quality=80):
+    # WebP로 저장
     cv2.imwrite(file_path, image, [cv2.IMWRITE_WEBP_QUALITY, quality])
+    
+    # 이미지에서 muted 색상 추출
+    v = Vibrant()
+    palette = v.get_palette(file_path)
+    muted_color = '#{:02x}{:02x}{:02x}'.format(*palette.muted.rgb)
+    
+    # 색상 정보 포함하도록 파일명 변경
+    file_name, file_ext = os.path.splitext(file_path)
+    new_file_name = f"{file_name}-c({muted_color}){file_ext}"
+    os.rename(file_path, new_file_name)
+    print(new_file_name)
+    return new_file_name
+
 
 # 인포 이미지 처리
 def process_description_image(image, output_dir, original_name_no_ext):
     height, width = image.shape[:2]
-    if height > 8192: # 세로 8192px 초과하는 이미지에 대해
+    webp_file_names = []
+    
+    if height > 8192:  # 세로 8192px 초과하는 이미지에 대해
         total_parts = (height // 8192) + (1 if height % 8192 > 0 else 0)
-        webp_file_names = []
         for d in range(total_parts):
             part_height = min(8192, height - d * 8192)
-            crop_part = image[d * 8192: d * 8192 + part_height, :] # 8192픽셀씩 쪼갬
-            webp_file_name = f"{output_dir}/{original_name_no_ext}-w({width})-h({height})-d({d+1}-{total_parts}).webp" # 파일명에 w, h, 분할수 포함
-            save_as_webp(crop_part, webp_file_name) # WEBP 저장
-            webp_file_names.append(webp_file_name)
-            del crop_part # GC  
-        return webp_file_names
-    else: # 8192픽셀 이하 이미지에 대해
-        webp_file_name = f"{output_dir}/{original_name_no_ext}-w({width})-h({height}).webp" # 파일명에 w, h 포함
-        save_as_webp(image, webp_file_name) # WEBP 저장
-        return [webp_file_name]
+            crop_part = image[d * 8192: d * 8192 + part_height, :]  # 8192픽셀씩 쪼갬
+            webp_file_name = f"{output_dir}/{original_name_no_ext}-w({width})-h({height})-d({d+1}-{total_parts}).webp"  # 파일명에 w, h, 분할수 포함
+            result = save_as_webp(crop_part, webp_file_name)  # WEBP 저장
+            if result:
+                webp_file_names.append(result)
+            del crop_part  # GC
+    else:  # 8192픽셀 이하 이미지에 대해
+        webp_file_name = f"{output_dir}/{original_name_no_ext}-w({width})-h({height}).webp"  # 파일명에 w, h 포함
+        result = save_as_webp(image, webp_file_name)  # WEBP 저장
+        if result:
+            webp_file_names.append(result)
+    
+    return webp_file_names
 
 # 현수막 이미지
 def process_thumbnail_image(image, output_dir, original_name_no_ext, cascade_file):
@@ -71,9 +90,9 @@ def process_thumbnail_image(image, output_dir, original_name_no_ext, cascade_fil
         crop = image[:, left:left+new_width] # 가로 기준 중앙을 기준으로 3/4 비율 크롭
     
     webp_file_name = f"{output_dir}/{original_name_no_ext}.webp"
-    save_as_webp(crop, webp_file_name) # WEBP 저장
+    result = save_as_webp(crop, webp_file_name) # WEBP 저장
     del crop # GC  
-    return [webp_file_name]
+    return [result]
 
 # 굿즈 이미지
 def process_product_image(image, output_dir, original_name_no_ext, cascade_file):
@@ -119,26 +138,26 @@ def process_product_image(image, output_dir, original_name_no_ext, cascade_file)
         bottom = min(height, top + new_side_length)
         crop = image[top:bottom, left:right]
     
-    # -t 이미지 저장
-    webp_file_name_t = f"{output_dir}/{original_name_no_ext}-t.webp"
-    save_as_webp(crop, webp_file_name_t)
+    # -p 이미지 저장
+    webp_file_name_t = f"{output_dir}/{original_name_no_ext}-p.webp"
+    result_p = save_as_webp(crop, webp_file_name_t)
     
     # 새로운 처리 방식 (얼굴만 또는 0.75배 축소)
     if len(valid_faces) > 0:
         x, y, w, h = max(valid_faces, key=lambda f: f[2] * f[3])
         face_crop = image[y:y+h, x:x+w]
         webp_file_name = f"{output_dir}/{original_name_no_ext}.webp"
-        save_as_webp(face_crop, webp_file_name)
+        result = save_as_webp(face_crop, webp_file_name)
     else:
         webp_file_name = f"{output_dir}/{original_name_no_ext}.webp"
-        save_as_webp(crop, webp_file_name)  # 0.75배 축소된 크롭 사용
+        result = save_as_webp(crop, webp_file_name)  # 0.75배 축소된 크롭 사용
     
     del crop
     if len(valid_faces) > 0:
         del face_crop
     gc.collect() # GC
     
-    return [webp_file_name_t, webp_file_name]
+    return [result_p, result]
 
 # 이미지 처리 개시
 def process_image(img_type, image_data, s3_path, output_dir, cascade_file):
@@ -198,17 +217,18 @@ def process_record(record, output_dir, cascade_file, bucket_name):
         if 'thumbnail' in images:
             s3_paths.append(('thumbnail', urlparse(images['thumbnail']).path.lstrip('/')))
         if 'description' in images:
-            s3_paths.extend(('description', urlparse(desc).path.lstrip('/')) for desc in images['description'])
+            s3_paths.extend([('description', urlparse(desc).path.lstrip('/')) for desc in images['description']])
         if 'product' in images:
-            s3_paths.extend(('product', urlparse(prod).path.lstrip('/')) for prod in images['product'])
+            s3_paths.extend([('product', urlparse(prod).path.lstrip('/')) for prod in images['product']])
         if 'watermark' in images:
             s3_paths.append(('watermark', urlparse(images['watermark']).path.lstrip('/')))
 
         results = []
         with ThreadPoolExecutor(max_workers=10) as executor:
-            download_futures = [executor.submit(download_image_from_s3, bucket_name, s3_key) for _, s3_key in s3_paths]
-            
-            for future, (img_type, _) in zip(as_completed(download_futures), s3_paths):
+            download_futures = {executor.submit(download_image_from_s3, bucket_name, s3_key): (img_type, s3_key) for img_type, s3_key in s3_paths}
+        
+            for future in as_completed(download_futures):
+                img_type, s3_key = download_futures[future]
                 image_data, download_time, s3_path = future.result()
                 process_future = executor.submit(process_image, img_type, image_data, s3_path, output_dir, cascade_file)
                 results.append((process_future, image_id))
@@ -248,7 +268,7 @@ def lambda_handler(event, context):
                 processing_times.append(processing_time)
                 for local_path in processed_files:
                     relative_path = os.path.relpath(local_path, output_dir)
-                    s3_path = os.path.join('processed_images', image_id, relative_path)
+                    s3_path = os.path.join('booth', image_id, relative_path) # booth 폴더 내 _id별로 폴더 구분해서 저장
                     upload_futures.append(executor.submit(upload_to_s3, local_path, bucket_name, s3_path))
 
         for future in as_completed(upload_futures):
