@@ -10,8 +10,6 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 import gc
-from vibrant import Vibrant
-import threading
 
 s3_client = boto3.client('s3')
 
@@ -33,44 +31,26 @@ def detect_faces(image, cascade_file):
 
 # WEBP 변환
 def save_as_webp(image, file_path, quality=80):
-    # WebP로 저장
     cv2.imwrite(file_path, image, [cv2.IMWRITE_WEBP_QUALITY, quality])
-    
-    # 이미지에서 muted 색상 추출
-    v = Vibrant()
-    palette = v.get_palette(file_path)
-    muted_color = '#{:02x}{:02x}{:02x}'.format(*palette.muted.rgb)
-    
-    # 색상 정보 포함하도록 파일명 변경
-    file_name, file_ext = os.path.splitext(file_path)
-    new_file_name = f"{file_name}-c({muted_color}){file_ext}"
-    os.rename(file_path, new_file_name)
-    print(new_file_name)
-    return new_file_name
 
 # 인포 이미지 처리
 def process_description_image(image, output_dir, original_name_no_ext):
     height, width = image.shape[:2]
-    webp_file_names = []
-    
-    if height > 8192:  # 세로 8192px 초과하는 이미지에 대해
+    if height > 8192: # 세로 8192px 초과하는 이미지에 대해
         total_parts = (height // 8192) + (1 if height % 8192 > 0 else 0)
+        webp_file_names = []
         for d in range(total_parts):
             part_height = min(8192, height - d * 8192)
-            crop_part = image[d * 8192: d * 8192 + part_height, :]  # 8192픽셀씩 쪼갬
-            webp_file_name = f"{output_dir}/{original_name_no_ext}-w({width})-h({height})-d({d+1}-{total_parts}).webp"  # 파일명에 w, h, 분할수 포함
-            result = save_as_webp(crop_part, webp_file_name)  # WEBP 저장
-            if result:
-                webp_file_names.append(result)
-            del crop_part  # GC
-    else:  # 8192픽셀 이하 이미지에 대해
-        webp_file_name = f"{output_dir}/{original_name_no_ext}-w({width})-h({height}).webp"  # 파일명에 w, h 포함
-        result = save_as_webp(image, webp_file_name)  # WEBP 저장
-        if result:
-            webp_file_names.append(result)
-    
-    return webp_file_names
-
+            crop_part = image[d * 8192: d * 8192 + part_height, :] # 8192픽셀씩 쪼갬
+            webp_file_name = f"{output_dir}/{original_name_no_ext}-w({width})-h({height})-d({d+1}-{total_parts}).webp" # 파일명에 w, h, 분할수 포함
+            save_as_webp(crop_part, webp_file_name) # WEBP 저장
+            webp_file_names.append(webp_file_name)
+            del crop_part # GC  
+        return webp_file_names
+    else: # 8192픽셀 이하 이미지에 대해
+        webp_file_name = f"{output_dir}/{original_name_no_ext}-w({width})-h({height}).webp" # 파일명에 w, h 포함
+        save_as_webp(image, webp_file_name) # WEBP 저장
+        return [webp_file_name]
 
 # 현수막 이미지
 def process_thumbnail_image(image, output_dir, original_name_no_ext, cascade_file):
@@ -85,17 +65,15 @@ def process_thumbnail_image(image, output_dir, original_name_no_ext, cascade_fil
         right = min(left + new_width, width)
         bottom = height
         crop = image[top:bottom, left:right] # 감지된 얼굴 기준으로 3/4 비율 크롭
-        
     else: # 얼굴이 감지되지 않은 경우
         new_width = int(height * 3 / 4)
         left = (width - new_width) // 2
         crop = image[:, left:left+new_width] # 가로 기준 중앙을 기준으로 3/4 비율 크롭
     
     webp_file_name = f"{output_dir}/{original_name_no_ext}.webp"
-    result = save_as_webp(crop, webp_file_name) # WEBP 저장
+    save_as_webp(crop, webp_file_name) # WEBP 저장
     del crop # GC  
-    return [result]
-
+    return [webp_file_name]
 
 # 굿즈 이미지
 def process_product_image(image, output_dir, original_name_no_ext, cascade_file):
@@ -124,7 +102,6 @@ def process_product_image(image, output_dir, original_name_no_ext, cascade_file)
         
         # 1:1 비율로 얼굴 부분 크롭
         crop = image[top:bottom, left:right]
-        
     else: # 유효한 얼굴이 감지되지 않은 경우
         side_length = min(width, height)
         center_x = width // 2
@@ -142,29 +119,29 @@ def process_product_image(image, output_dir, original_name_no_ext, cascade_file)
         bottom = min(height, top + new_side_length)
         crop = image[top:bottom, left:right]
     
-    # -p 이미지 저장
-    webp_file_name_t = f"{output_dir}/{original_name_no_ext}-p.webp"
-    result_p = save_as_webp(crop, webp_file_name_t)
+    # -t 이미지 저장
+    webp_file_name_t = f"{output_dir}/{original_name_no_ext}-t.webp"
+    save_as_webp(crop, webp_file_name_t)
     
     # 새로운 처리 방식 (얼굴만 또는 0.75배 축소)
     if len(valid_faces) > 0:
         x, y, w, h = max(valid_faces, key=lambda f: f[2] * f[3])
         face_crop = image[y:y+h, x:x+w]
         webp_file_name = f"{output_dir}/{original_name_no_ext}.webp"
-        result = save_as_webp(face_crop, webp_file_name)
+        save_as_webp(face_crop, webp_file_name)
     else:
         webp_file_name = f"{output_dir}/{original_name_no_ext}.webp"
-        result = save_as_webp(crop, webp_file_name)  # 0.75배 축소된 크롭 사용
+        save_as_webp(crop, webp_file_name)  # 0.75배 축소된 크롭 사용
     
     del crop
     if len(valid_faces) > 0:
         del face_crop
     gc.collect() # GC
     
-    return [result_p, result]
+    return [webp_file_name_t, webp_file_name]
 
 # 이미지 처리 개시
-def process_image(img_type, image_data, s3_path, output_dir, cascade_file, image_id):
+def process_image(img_type, image_data, s3_path, output_dir, cascade_file):
     try:
         start_time = time.time()
         image = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
@@ -193,10 +170,6 @@ def process_image(img_type, image_data, s3_path, output_dir, cascade_file, image
 
         processing_time = time.time() - start_time
         print(f"Processed {s3_path} in {processing_time:.2f} seconds")
-        
-        # DynamoDB 업데이트
-        update_dynamodb(image_id, 'processed')
-        
         return result, s3_path, processing_time
 
     except Exception as e:
@@ -225,22 +198,19 @@ def process_record(record, output_dir, cascade_file, bucket_name):
         if 'thumbnail' in images:
             s3_paths.append(('thumbnail', urlparse(images['thumbnail']).path.lstrip('/')))
         if 'description' in images:
-            s3_paths.extend([('description', urlparse(desc).path.lstrip('/')) for desc in images['description']])
+            s3_paths.extend(('description', urlparse(desc).path.lstrip('/')) for desc in images['description'])
         if 'product' in images:
-            s3_paths.extend([('product', urlparse(prod).path.lstrip('/')) for prod in images['product']])
+            s3_paths.extend(('product', urlparse(prod).path.lstrip('/')) for prod in images['product'])
         if 'watermark' in images:
             s3_paths.append(('watermark', urlparse(images['watermark']).path.lstrip('/')))
 
         results = []
         with ThreadPoolExecutor(max_workers=10) as executor:
-
-            download_futures = {executor.submit(download_image_from_s3, bucket_name, s3_key): (img_type, s3_key) for img_type, s3_key in s3_paths}
-        
-            for future in as_completed(download_futures):
-                img_type, s3_key = download_futures[future]
-
+            download_futures = [executor.submit(download_image_from_s3, bucket_name, s3_key) for _, s3_key in s3_paths]
+            
+            for future, (img_type, _) in zip(as_completed(download_futures), s3_paths):
                 image_data, download_time, s3_path = future.result()
-                process_future = executor.submit(process_image, img_type, image_data, s3_path, output_dir, cascade_file, image_id)
+                process_future = executor.submit(process_image, img_type, image_data, s3_path, output_dir, cascade_file)
                 results.append((process_future, image_id))
 
         return results
@@ -262,35 +232,6 @@ def lambda_handler(event, context):
     processing_times = []
     upload_times = []
 
-# dynamodb 처리
-    total_images = sum(len(json.loads(record['body'])['images']) for record in event['Records'])
-    completed_images = 0
-    status_lock = threading.Lock()
-
-    print(f"처리할 이미지: {total_images}")
-    print(f"완료된 이미지: {completed_images}")
-
-    def update_completed_count():
-        nonlocal completed_images
-        with status_lock:
-            completed_images += 1
-            print(f"완료된 이미지: {completed_images}")
-
-    dynamodb = boto3.resource('dynamodb')
-    table = dynamodb.Table('your_table_name')
-
-    def update_dynamodb(image_id, status):
-        try:
-            response = table.update_item(
-                Key={'_id': image_id},
-                UpdateExpression="SET #status = :s",
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={':s': status}
-            )
-            print(f"DynamoDB 업데이트 성공: {image_id}")
-        except Exception as e:
-            print(f"DynamoDB 업데이트 실패: {image_id}, 오류: {str(e)}")
-
     with ThreadPoolExecutor(max_workers=20) as executor:
         record_futures = [executor.submit(process_record, record, output_dir, cascade_file, bucket_name) for record in event['Records']]
         
@@ -307,25 +248,21 @@ def lambda_handler(event, context):
                 processing_times.append(processing_time)
                 for local_path in processed_files:
                     relative_path = os.path.relpath(local_path, output_dir)
-                    s3_path = os.path.join('booth', image_id, relative_path) # booth 폴더 내 _id별로 폴더 구분해서 
-                    저장
-
-                    upload_future = executor.submit(upload_to_s3, local_path, bucket_name, s3_path)
-                    upload_futures.append(upload_future)
-                    upload_future.add_done_callback(lambda x: update_completed_count())
-                    upload_future.add_done_callback(lambda x: update_dynamodb(image_id, 'uploaded'))
+                    s3_path = os.path.join('processed_images', image_id, relative_path)
+                    upload_futures.append(executor.submit(upload_to_s3, local_path, bucket_name, s3_path))
 
         for future in as_completed(upload_futures):
             upload_time = future.result()
             upload_times.append(upload_time)
 
     total_time = time.time() - start_time
+
     max_processing_time = max(processing_times) if processing_times else 0
     max_upload_time = max(upload_times) if upload_times else 0
 
     print(f"최대 이미지 처리 시간 (병렬 처리): {max_processing_time:.2f} 초")
     print(f"최대 S3 업로드 시간 (병렬 처리): {max_upload_time:.2f} 초")
-    print(f"총 처리 시간 (병렬 처리 포함): {total_time:.2f} 초")
+    print(f"총 리 시간 (렬 처리 포함): {total_time:.2f} 초")
 
     gc.collect()
 
@@ -333,4 +270,3 @@ def lambda_handler(event, context):
         'statusCode': 200,
         'body': json.dumps('Processing completed')
     }
-
