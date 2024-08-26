@@ -1,88 +1,59 @@
-from pymongo import MongoClient
-from bson import ObjectId
+import time
+import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
+from rich.console import Console
 
-# MongoDB 연결 설정
-client = MongoClient('mongodb_connection_string')
-db = client['kiteapp']
-collection = db['booth']
-
-# 변경하고자 하는 URL 매핑 지정
-url_mappings = {
-    "old_url_1": "new_url_1",
-    "old_url_2": "new_url_2",
-    "old_url_3": "new_url_3"
-}
-
-def update_urls_in_data(data):
-    updates = {}
-    stack = [('', data)]
-    
-    while stack:
-        path, value = stack.pop()
-        if isinstance(value, dict):
-            for k, v in value.items():
-                new_path = f"{path}.{k}" if path else k
-                if k in ['thumbnail', 'src', 'image'] and isinstance(v, str):
-                    new_value = url_mappings.get(v)
-                    if new_value:
-                        updates[new_path] = new_value
-                elif isinstance(v, (dict, list)):
-                    stack.append((new_path, v))
-        elif isinstance(value, list):
-            for i, item in enumerate(value):
-                new_path = f"{path}.{i}"
-                if isinstance(item, str):
-                    new_value = url_mappings.get(item)
-                    if new_value:
-                        updates[new_path] = new_value
-                elif isinstance(item, (dict, list)):
-                    stack.append((new_path, item))
-    
-    return updates
+def download_file(file_name, file_size):
+    """파일 다운로드를 시뮬레이션하는 함수"""
+    bytes_downloaded = 0
+    while bytes_downloaded < file_size:
+        chunk_size = random.randint(1, 1000)
+        bytes_downloaded += chunk_size
+        bytes_downloaded = min(bytes_downloaded, file_size)
+        time.sleep(0.01)  # 네트워크 지연 시뮬레이션
+        yield bytes_downloaded
 
 def main():
-    document_id = "document_object_id"
-    projection = {
-        'thumbnail': 1,
-        'description.content.attrs.src': 1,
-        'product.option.image': 1,
-    }
+    files_to_download = [
+        ("file1.zip", 100000),
+        ("file2.iso", 200000),
+        ("file3.exe", 150000),
+        ("file4.dmg", 250000),
+        ("file5.tar", 180000),
+    ]
 
-    # MongoDB에서 데이터 가져오기 및 업데이트
-    document = collection.find_one({'_id': ObjectId(document_id)}, projection)
-    
-    if not document:
-        print(f"해당하는 문서를 찾을 수 없음: {document_id}")
-        return
+    console = Console()
+    with Progress(
+        TextColumn("[bold blue]{task.description}", justify="right"),
+        BarColumn(bar_width=None),
+        "[progress.percentage]{task.percentage:>3.1f}%",
+        "•",
+        TaskProgressColumn(),
+        "•",
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        # 전체 진행 상황을 표시할 태스크
+        overall_task = progress.add_task("[yellow]전체 진행 상황", total=len(files_to_download))
 
-    updates = update_urls_in_data(document)
+        # 각 파일별 다운로드 진행 상황을 표시할 태스크들
+        file_tasks = {file_name: progress.add_task(f"[cyan]{file_name}", total=file_size) 
+                      for file_name, file_size in files_to_download}
 
-    if not updates:
-        print("변경사항 없음")
-        return
+        with ThreadPoolExecutor(max_workers=5) as executor:  # max_workers를 5로 변경
+            futures = {executor.submit(download_file, file_name, file_size): file_name 
+                       for file_name, file_size in files_to_download}
 
-    print("Changes to be made:")
-    for key, value in updates.items():
-        print(f"{key}: {value}")
+            for future in as_completed(futures):
+                file_name = futures[future]
+                for bytes_downloaded in future.result():
+                    progress.update(file_tasks[file_name], completed=bytes_downloaded)
+                
+                # 파일 하나가 완료될 때마다 전체 진행 상황 업데이트
+                progress.update(overall_task, advance=1)
 
-    # 변경사항 MongoDB에 적용
-    result = collection.update_one(
-        {'_id': ObjectId(document_id)},
-        {'$set': updates}
-    )
-
-    if result.modified_count > 0:
-        print(f"업데이트 완료. 변경된 필드: {result.modified_count}")
-    else:
-        print("변경사항 없음")
-
-    # 업데이트된 문서 재확인
-    updated_document = collection.find_one({'_id': ObjectId(document_id)}, projection)
-    print("\n업데이트된 문서:")
-    print(updated_document)
+    console.print("[bold green]모든 파일 다운로드가 완료되었습니다!")
 
 if __name__ == "__main__":
-    try:
-        main()
-    finally:
-        client.close()
+    main()
