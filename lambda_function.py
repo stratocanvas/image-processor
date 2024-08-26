@@ -32,19 +32,26 @@ def detect_faces(image, cascade_file):
     return faces
 
 # WEBP 변환
-def save_as_webp(image, file_path, quality=80):
+def save_as_webp(image, file_path, type=None, quality=95):
     # WebP로 저장
     cv2.imwrite(file_path, image, [cv2.IMWRITE_WEBP_QUALITY, quality])
-    
-    # 이미지에서 muted 색상 추출
-    v = Vibrant()
-    palette = v.get_palette(file_path)
-    muted_color = '#{:02x}{:02x}{:02x}'.format(*palette.muted.rgb)
-    
-    # 색상 정보 포함하도록 파일명 변경
     file_name, file_ext = os.path.splitext(file_path)
-    new_file_name = f"{file_name}-c({muted_color}){file_ext}"
-    os.rename(file_path, new_file_name)
+    new_file_name = file_path
+
+    if type != 'description':
+        # 이미지에서 muted 색상 추출
+        v = Vibrant()
+        palette = v.get_palette(file_path)
+        muted_color = '#{:02x}{:02x}{:02x}'.format(*palette.muted.rgb)
+        # 색상 정보 포함하도록 파일명 변경
+        new_file_name = f"{file_name}-c({muted_color})"
+        
+        if type == 'profile':
+            new_file_name += '-p'
+        
+        new_file_name += file_ext
+        os.rename(file_path, new_file_name)
+    
     print(new_file_name)
     return new_file_name
 
@@ -59,13 +66,13 @@ def process_description_image(image, output_dir, original_name_no_ext):
             part_height = min(8192, height - d * 8192)
             crop_part = image[d * 8192: d * 8192 + part_height, :]  # 8192픽셀씩 쪼갬
             webp_file_name = f"{output_dir}/{original_name_no_ext}-w({width})-h({height})-d({d+1}-{total_parts}).webp"  # 파일명에 w, h, 분할수 포함
-            result = save_as_webp(crop_part, webp_file_name)  # WEBP 저장
+            result = save_as_webp(crop_part, webp_file_name, 'description')  # WEBP 저장
             if result:
                 webp_file_names.append(result)
             del crop_part  # GC
     else:  # 8192픽셀 이하 이미지에 대해
         webp_file_name = f"{output_dir}/{original_name_no_ext}-w({width})-h({height}).webp"  # 파일명에 w, h 포함
-        result = save_as_webp(image, webp_file_name)  # WEBP 저장
+        result = save_as_webp(image, webp_file_name, 'description')  # WEBP 저장
         if result:
             webp_file_names.append(result)
     
@@ -99,9 +106,9 @@ def process_thumbnail_image(image, output_dir, original_name_no_ext, cascade_fil
 
 # 굿즈 이미지
 def process_product_image(image, output_dir, original_name_no_ext, cascade_file):
-    faces = detect_faces(image, cascade_file) # 얼굴 감지
+    faces = detect_faces(image, cascade_file)
     height, width = image.shape[:2]
-    
+
     # 유효한 얼굴 선별
     valid_faces = []
     image_area = height * width
@@ -110,58 +117,67 @@ def process_product_image(image, output_dir, original_name_no_ext, cascade_file)
         face_area = w * h
         if face_area >= image_area / 100:
             valid_faces.append(face)
-    
-    if len(valid_faces) > 0: # 유효한 얼굴이 감지된 경우
-        x, y, w, h = max(valid_faces, key=lambda f: f[2] * f[3]) # 가장 큰 얼굴 선택
-        center_x, center_y = x + w // 2, y + h // 2
-        side_length = max(w, h)
-        
-        # 얼굴 중심으로 1:1 비율의 정사각형 영역 계산
-        left = max(center_x - side_length // 2, 0)
-        top = max(center_y - side_length // 2, 0)
-        right = min(left + side_length, width)
-        bottom = min(top + side_length, height)
-        
-        # 1:1 비율로 얼굴 부분 크롭
-        crop = image[top:bottom, left:right]
-        
-    else: # 유효한 얼굴이 감지되지 않은 경우
-        side_length = min(width, height)
-        center_x = width // 2
-        center_y = height // 3 # 가로 중앙, 세로 1/3 지점 선택
-        left = max(0, center_x - side_length // 2)
-        top = max(0, center_y - side_length // 2)
-        right = min(width, left + side_length)
-        bottom = min(height, top + side_length)
-        
-        # 0.75배 축소된 크롭
-        new_side_length = int(side_length * 0.75)
-        left = max(0, center_x - new_side_length // 2)
-        top = max(0, center_y - new_side_length // 2)
-        right = min(width, left + new_side_length)
-        bottom = min(height, top + new_side_length)
-        crop = image[top:bottom, left:right]
-    
-    # -p 이미지 저장
-    webp_file_name_t = f"{output_dir}/{original_name_no_ext}-p.webp"
-    result_p = save_as_webp(crop, webp_file_name_t)
-    
-    # 새로운 처리 방식 (얼굴만 또는 0.75배 축소)
+
+    # 굿즈 이미지: 1:1 비율로 꽉차게 크롭 (이미지 경계 내에서)
     if len(valid_faces) > 0:
         x, y, w, h = max(valid_faces, key=lambda f: f[2] * f[3])
-        face_crop = image[y:y+h, x:x+w]
-        webp_file_name = f"{output_dir}/{original_name_no_ext}.webp"
-        result = save_as_webp(face_crop, webp_file_name)
+        center_x, center_y = x + w // 2, y + h // 2
     else:
-        webp_file_name = f"{output_dir}/{original_name_no_ext}.webp"
-        result = save_as_webp(crop, webp_file_name)  # 0.75배 축소된 크롭 사용
-    
-    del crop
+        center_x, center_y = width // 2, 0  # 이미지 상단 중앙
+
+    side_length = min(width, height)
+    left = max(0, min(center_x - side_length // 2, width - side_length))
+    top = max(0, min(center_y - side_length // 2, height - side_length))
+    right = left + side_length
+    bottom = top + side_length
+
+    crop = image[top:bottom, left:right]
+
+    webp_file_name = f"{output_dir}/{original_name_no_ext}.webp"
+    result = save_as_webp(crop, webp_file_name)
+
+    # 프로필 이미지: 얼굴 크롭 또는 1.25배 확대 크롭 (1:1 비율 유지)
     if len(valid_faces) > 0:
-        del face_crop
-    gc.collect() # GC
-    
-    return [result_p, result]
+        x, y, w, h = max(valid_faces, key=lambda f: f[2] * f[3])
+        center_x, center_y = x + w // 2, y + h // 2
+        crop_size = int(max(w, h) * 1.25)
+    else:
+        # 얼굴이 감지되지 않은 경우, 이미지 상단 20% 지점을 중심으로 1.25배 확대
+        center_x = width // 2
+        center_y = int(height * 0.2)  # 상단 20% 지점
+        crop_size = int(min(width, height) / 1.25)  
+
+    # 크롭 영역 계산
+    left_p = max(0, center_x - crop_size // 2)
+    top_p = max(0, center_y - crop_size // 2)
+    right_p = min(width, left_p + crop_size)
+    bottom_p = min(height, top_p + crop_size)
+
+    # 정사각형 유지를 위해 짧은 쪽에 맞춤
+    crop_width = right_p - left_p
+    crop_height = bottom_p - top_p
+    if crop_width < crop_height:
+        diff = crop_height - crop_width
+        top_p += diff // 2
+        bottom_p -= diff - diff // 2
+    elif crop_height < crop_width:
+        diff = crop_width - crop_height
+        left_p += diff // 2
+        right_p -= diff - diff // 2
+
+    # 크롭 및 리사이즈
+    crop_p = image[top_p:bottom_p, left_p:right_p]
+    crop_p = cv2.resize(crop_p, (int(crop_size * 1.25), int(crop_size * 1.25)), interpolation=cv2.INTER_LINEAR)
+
+    # 처리 B 결과 저장
+    webp_file_name_p = f"{output_dir}/{original_name_no_ext}.webp"
+    result_p = save_as_webp(crop_p, webp_file_name_p, 'profile')
+
+    # 메모리 정리
+    del crop, crop_p
+    gc.collect()
+
+    return [result, result_p]
 
 # 이미지 처리 개시
 def process_image(img_type, image_data, s3_path, output_dir, cascade_file, image_id):
