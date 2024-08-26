@@ -265,6 +265,22 @@ def delete_original_image(s3_url):
     except Exception as e:
         print(f"원본 이미지 삭제 실패: {s3_url}, 오류: {str(e)}")
 
+
+def update_dynamodb(image_id, status):
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table('kiteapp-image-transformation')
+
+    try:
+        response = table.update_item(
+            Key={'id': image_id},
+            UpdateExpression="SET #status = :s",
+            ExpressionAttributeNames={'#status': 'status'},
+            ExpressionAttributeValues={':s': status}
+        )
+        print(f"DynamoDB 업데이트 성공: {image_id}")
+    except Exception as e:
+        print(f"DynamoDB 업데이트 실패: {image_id}, 오류: {str(e)}")
+
 # 메인
 def lambda_handler(event, context):
     output_dir = '/tmp/output'
@@ -278,7 +294,7 @@ def lambda_handler(event, context):
     upload_times = []
     delete_futures = []
 
-# dynamodb 처리
+    # dynamodb 처리
     total_images = sum(len(json.loads(record['body'])['images']) for record in event['Records'])
     completed_images = 0
     status_lock = threading.Lock()
@@ -292,20 +308,6 @@ def lambda_handler(event, context):
             completed_images += 1
             print(f"완료된 이미지: {completed_images}")
 
-    dynamodb = boto3.resource('dynamodb')
-    table = dynamodb.Table('your_table_name')
-
-    def update_dynamodb(image_id, status):
-        try:
-            response = table.update_item(
-                Key={'_id': image_id},
-                UpdateExpression="SET #status = :s",
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={':s': status}
-            )
-            print(f"DynamoDB 업데이트 성공: {image_id}")
-        except Exception as e:
-            print(f"DynamoDB 업데이트 실패: {image_id}, 오류: {str(e)}")
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         record_futures = [executor.submit(process_record, record, output_dir, cascade_file, bucket_name) for record in event['Records']]
@@ -323,8 +325,7 @@ def lambda_handler(event, context):
                 processing_times.append(processing_time)
                 for local_path in processed_files:
                     relative_path = os.path.relpath(local_path, output_dir)
-                    s3_path = os.path.join('booth', image_id, relative_path)# booth 폴더 내 _id별로 폴더 구분해서 
-                    저장
+                    s3_path = os.path.join('booth', image_id, relative_path)# booth 폴더 내 _id별로 폴더 구분해서 저장
                     
                     upload_future = executor.submit(upload_to_s3, local_path, bucket_name, s3_path)
                     upload_futures.append(upload_future)
@@ -358,4 +359,3 @@ def lambda_handler(event, context):
         'statusCode': 200,
         'body': json.dumps('Processing completed')
     }
-
