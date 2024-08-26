@@ -193,10 +193,6 @@ def process_image(img_type, image_data, s3_path, output_dir, cascade_file, image
 
         processing_time = time.time() - start_time
         print(f"Processed {s3_path} in {processing_time:.2f} seconds")
-        
-        # DynamoDB 업데이트
-        update_dynamodb(image_id, 'processed')
-        
         return result, s3_path, processing_time
 
     except Exception as e:
@@ -266,20 +262,35 @@ def delete_original_image(s3_url):
         print(f"원본 이미지 삭제 실패: {s3_url}, 오류: {str(e)}")
 
 
-def update_dynamodb(image_id, status):
+def update_dynamodb(image_id):
     dynamodb = boto3.resource('dynamodb')
     table = dynamodb.Table('kiteapp-image-transformation')
 
     try:
         response = table.update_item(
             Key={'id': image_id},
-            UpdateExpression="SET #status = :s",
-            ExpressionAttributeNames={'#status': 'status'},
-            ExpressionAttributeValues={':s': status}
+            UpdateExpression="ADD completed :inc",
+            ExpressionAttributeValues={':inc': 1},
+            ReturnValues="UPDATED_NEW"
         )
-        print(f"DynamoDB 업데이트 성공: {image_id}")
+        new_completed_value = response['Attributes'].get('completed', 0)
+        print(f"DynamoDB 업데이트 성공: {image_id}, completed: {new_completed_value}")
     except Exception as e:
         print(f"DynamoDB 업데이트 실패: {image_id}, 오류: {str(e)}")
+
+def count_original_images(record):
+    body = json.loads(record['body'])
+    images = body['images']
+    total = 0
+    
+    if 'thumbnail' in images and images['thumbnail']:
+        total += 1
+    if 'watermark' in images and images['watermark']:
+        total += 1
+    total += len(images.get('description', []))
+    total += len(images.get('product', []))
+    
+    return total
 
 # 메인
 def lambda_handler(event, context):
@@ -295,7 +306,7 @@ def lambda_handler(event, context):
     delete_futures = []
 
     # dynamodb 처리
-    total_images = sum(len(json.loads(record['body'])['images']) for record in event['Records'])
+    total_images = sum(count_original_images(record) for record in event['Records'])
     completed_images = 0
     status_lock = threading.Lock()
 
@@ -323,14 +334,14 @@ def lambda_handler(event, context):
             if result:
                 processed_files, s3_path, processing_time = result
                 processing_times.append(processing_time)
+                update_completed_count()
+                executor.submit(update_dynamodb, image_id)
                 for local_path in processed_files:
                     relative_path = os.path.relpath(local_path, output_dir)
                     s3_path = os.path.join('booth', image_id, relative_path)# booth 폴더 내 _id별로 폴더 구분해서 저장
                     
                     upload_future = executor.submit(upload_to_s3, local_path, bucket_name, s3_path)
                     upload_futures.append(upload_future)
-                    upload_future.add_done_callback(lambda x: update_completed_count())
-                    upload_future.add_done_callback(lambda x: update_dynamodb(image_id, 'uploaded'))
                 
                 # 원본 이미지 삭제 작업을 별도의 Future로 생성
                 delete_future = executor.submit(delete_original_image, f"s3://{bucket_name}/{original_s3_key}")
