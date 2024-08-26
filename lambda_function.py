@@ -12,8 +12,16 @@ from functools import partial
 import gc
 from vibrant import Vibrant
 import threading
+from pymongo import MongoClient
+from bson import ObjectId
+
 
 s3_client = boto3.client('s3')
+mongodb_uri = os.getenv('MONGODB_URI')
+client = MongoClient(mongodb_uri)
+db = client['kiteapp']
+collection = db['booth']
+
 
 # AWS S3에서 이미지 다운로드
 # URL 대신 S3 SDK 사용
@@ -32,17 +40,21 @@ def detect_faces(image, cascade_file):
     return faces
 
 # WEBP 변환
-def save_as_webp(image, file_path, type=None, quality=95):
+def save_as_webp(image, file_path, type=None, quality=95, extracted_color=None):
     # WebP로 저장
     cv2.imwrite(file_path, image, [cv2.IMWRITE_WEBP_QUALITY, quality])
     file_name, file_ext = os.path.splitext(file_path)
     new_file_name = file_path
 
     if type != 'description':
-        # 이미지에서 muted 색상 추출
-        v = Vibrant()
-        palette = v.get_palette(file_path)
-        muted_color = '#{:02x}{:02x}{:02x}'.format(*palette.muted.rgb)
+        if extracted_color:
+            muted_color = extracted_color
+        else:
+            # 이미지에서 muted 색상 추출
+            v = Vibrant()
+            palette = v.get_palette(file_path)
+            muted_color = '{:02x}{:02x}{:02x}'.format(*palette.muted.rgb)
+        
         # 색상 정보 포함하도록 파일명 변경
         new_file_name = f"{file_name}-c({muted_color})"
         
@@ -135,6 +147,9 @@ def process_product_image(image, output_dir, original_name_no_ext, cascade_file)
 
     webp_file_name = f"{output_dir}/{original_name_no_ext}.webp"
     result = save_as_webp(crop, webp_file_name)
+    
+    # 원본 이미지에서 추출한 색상 가져오기
+    extracted_color = result.split('-c(')[1].split(')')[0]
 
     # 프로필 이미지: 얼굴 크롭 또는 1.25배 확대 크롭 (1:1 비율 유지)
     if len(valid_faces) > 0:
@@ -169,9 +184,9 @@ def process_product_image(image, output_dir, original_name_no_ext, cascade_file)
     crop_p = image[top_p:bottom_p, left_p:right_p]
     crop_p = cv2.resize(crop_p, (int(crop_size * 1.25), int(crop_size * 1.25)), interpolation=cv2.INTER_LINEAR)
 
-    # 처리 B 결과 저장
+    # 처리 B 결과 저장 (원본 이미지의 색상 사용)
     webp_file_name_p = f"{output_dir}/{original_name_no_ext}.webp"
-    result_p = save_as_webp(crop_p, webp_file_name_p, 'profile')
+    result_p = save_as_webp(crop_p, webp_file_name_p, 'profile', extracted_color=extracted_color)
 
     # 메모리 정리
     del crop, crop_p
@@ -244,6 +259,7 @@ def process_record(record, output_dir, cascade_file, bucket_name):
             s3_paths.append(('watermark', urlparse(images['watermark']).path.lstrip('/')))
 
         results = []
+        url_mappings = {}
         with ThreadPoolExecutor(max_workers=10) as executor:
 
             download_futures = {executor.submit(download_image_from_s3, bucket_name, s3_key): (img_type, s3_key) for img_type, s3_key in s3_paths}
@@ -255,7 +271,7 @@ def process_record(record, output_dir, cascade_file, bucket_name):
                 process_future = executor.submit(process_image, img_type, image_data, s3_path, output_dir, cascade_file, image_id)
                 results.append((process_future, image_id, s3_key))
 
-        return results
+        return results, image_id, url_mappings
 
     except json.JSONDecodeError as e:
         print(f"Error decoding JSON: {str(e)}")
@@ -310,6 +326,7 @@ def count_original_images(record):
 
 # 메인
 def lambda_handler(event, context):
+    all_url_mappings = {}
     output_dir = '/tmp/output'
     os.makedirs(output_dir, exist_ok=True)
     cascade_file = 'lbpcascade_animeface.xml'
@@ -320,7 +337,7 @@ def lambda_handler(event, context):
     processing_times = []
     upload_times = []
     delete_futures = []
-
+    
     # dynamodb 처리
     total_images = sum(count_original_images(record) for record in event['Records'])
     completed_images = 0
@@ -335,16 +352,21 @@ def lambda_handler(event, context):
             completed_images += 1
             print(f"완료된 이미지: {completed_images}")
 
+    all_url_mappings = {}
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         record_futures = [executor.submit(process_record, record, output_dir, cascade_file, bucket_name) for record in event['Records']]
         
         all_results = []
         for future in as_completed(record_futures):
-            if future.result():
-                all_results.extend(future.result())
+            result = future.result()
+            if result:
+                results, image_id, url_mappings = result
+                all_results.extend(results)
+                all_url_mappings[image_id] = url_mappings
 
         upload_futures = []
+        
         for process_future, image_id, original_s3_key in all_results:
             result = process_future.result()
             if result:
@@ -352,16 +374,27 @@ def lambda_handler(event, context):
                 processing_times.append(processing_time)
                 update_completed_count()
                 executor.submit(update_dynamodb, image_id)
+                old_url = f"https://{bucket_name}.s3.ap-northeast-2.amazonaws.com/{original_s3_key}"
+                
                 for local_path in processed_files:
                     relative_path = os.path.relpath(local_path, output_dir)
                     s3_path = os.path.join('booth', image_id, relative_path)# booth 폴더 내 _id별로 폴더 구분해서 저장
                     
                     upload_future = executor.submit(upload_to_s3, local_path, bucket_name, s3_path)
                     upload_futures.append(upload_future)
+                    new_url = f"https://{bucket_name}.s3.ap-northeast-2.amazonaws.com/{s3_path}"
+                    
+                    if '-d(' in relative_path:
+                        parts = relative_path.split('-d(')
+                        new_url = f"https://{bucket_name}.s3.ap-northeast-2.amazonaws.com/booth/{image_id}/{parts[0]}-d(0-{parts[1].split('-')[1]}"
+                    
+                    if '-p' not in relative_path:
+                        all_url_mappings[image_id][old_url] = new_url
                 
                 # 원본 이미지 삭제 작업을 별도의 Future로 생성
                 delete_future = executor.submit(delete_original_image, f"s3://{bucket_name}/{original_s3_key}")
                 delete_futures.append(delete_future)
+                
 
         # 업로드 완료 대기
         for future in as_completed(upload_futures):
@@ -370,7 +403,15 @@ def lambda_handler(event, context):
 
         # 삭제 작업 완료 대기
         for future in as_completed(delete_futures):
-            future.result()  # 예외 처리는 delete_original_image 함수 내에서 수행됨
+            future.result() 
+        
+    print("모든 이미지 처리 완료. MongoDB 업데이트 시작.")
+    for image_id, url_mappings in all_url_mappings.items():
+        try:
+            update_mongodb_urls(image_id, url_mappings)
+        except Exception as e:
+            print(f"MongoDB 업데이트 중 오류 발생 (이미지 ID: {image_id}): {str(e)}")
+
 
     total_time = time.time() - start_time
     max_processing_time = max(processing_times) if processing_times else 0
@@ -381,8 +422,64 @@ def lambda_handler(event, context):
     print(f"총 처리 시간 (병렬 처리 포함): {total_time:.2f} 초")
 
     gc.collect()
-
+    client.close()
     return {
         'statusCode': 200,
         'body': json.dumps('Processing completed')
     }
+
+
+def update_urls_in_data(data, url_mappings):
+    updates = {}
+    stack = [('', data)]
+    
+    while stack:
+        path, value = stack.pop()
+        if isinstance(value, dict):
+            for k, v in value.items():
+                new_path = f"{path}.{k}" if path else k
+                if k in ['thumbnail', 'src', 'image'] and isinstance(v, str):
+                    new_value = url_mappings.get(v)
+                    if new_value:
+                        updates[new_path] = new_value
+                elif isinstance(v, (dict, list)):
+                    stack.append((new_path, v))
+        elif isinstance(value, list):
+            for i, item in enumerate(value):
+                new_path = f"{path}.{i}"
+                if isinstance(item, str):
+                    new_value = url_mappings.get(item)
+                    if new_value:
+                        updates[new_path] = new_value
+                elif isinstance(item, (dict, list)):
+                    stack.append((new_path, item))
+    
+    return updates
+
+
+def update_mongodb_urls(image_id, url_mappings):
+    print(f"MongoDB 업데이트 시작. booth ID: {image_id}")
+    print(f"URL 매핑: {url_mappings}")
+
+    projection = {
+        'thumbnail': 1,
+        'description.content.attrs.src': 1,
+        'product.option.image': 1,
+    }
+
+    try:
+        document = collection.find_one({'_id': ObjectId(image_id)}, projection)
+        
+        if document:
+            updates = update_urls_in_data(document, url_mappings)
+            collection.update_one(
+                {'_id': ObjectId(image_id)},
+                {'$set': updates}
+            )
+        else:
+            print(f"문서를 찾을 수 없음. ID: {image_id}")
+
+    except Exception as e:
+        print(f"MongoDB 업데이트 중 오류 발생. 이미지 ID: {image_id}, 오류: {str(e)}")
+    
+    print(f"MongoDB 업데이트 종료. 이미지 ID: {image_id}")
