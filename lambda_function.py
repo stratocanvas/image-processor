@@ -234,13 +234,13 @@ def process_record(record, output_dir, cascade_file, bucket_name):
         images = body['images']
         
         s3_paths = []
-        if 'thumbnail' in images:
+        if 'thumbnail' in images and images['thumbnail']:
             s3_paths.append(('thumbnail', urlparse(images['thumbnail']).path.lstrip('/')))
         if 'description' in images:
             s3_paths.extend([('description', urlparse(desc).path.lstrip('/')) for desc in images['description']])
         if 'product' in images:
             s3_paths.extend([('product', urlparse(prod).path.lstrip('/')) for prod in images['product']])
-        if 'watermark' in images:
+        if 'watermark' in images and images['watermark']:
             s3_paths.append(('watermark', urlparse(images['watermark']).path.lstrip('/')))
 
         results = []
