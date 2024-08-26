@@ -241,7 +241,7 @@ def process_record(record, output_dir, cascade_file, bucket_name):
 
                 image_data, download_time, s3_path = future.result()
                 process_future = executor.submit(process_image, img_type, image_data, s3_path, output_dir, cascade_file, image_id)
-                results.append((process_future, image_id))
+                results.append((process_future, image_id, s3_key))
 
         return results
 
@@ -249,6 +249,21 @@ def process_record(record, output_dir, cascade_file, bucket_name):
         print(f"Error decoding JSON: {str(e)}")
     except Exception as e:
         print(f"Error processing message: {str(e)}")
+ 
+ #이미지 삭제단
+def parse_s3_url(url):
+    parsed_url = urlparse(url)
+    bucket_name = parsed_url.netloc.split('.')[0]
+    object_key = parsed_url.path.lstrip('/')
+    return bucket_name, object_key
+
+def delete_original_image(s3_url):
+    try:
+        bucket_name, object_key = parse_s3_url(s3_url)
+        s3_client.delete_object(Bucket=bucket_name, Key=object_key)
+        print(f"원본 이미지 삭제 성공: {s3_url}")
+    except Exception as e:
+        print(f"원본 이미지 삭제 실패: {s3_url}, 오류: {str(e)}")
 
 # 메인
 def lambda_handler(event, context):
@@ -261,6 +276,7 @@ def lambda_handler(event, context):
 
     processing_times = []
     upload_times = []
+    delete_futures = []
 
 # dynamodb 처리
     total_images = sum(len(json.loads(record['body'])['images']) for record in event['Records'])
@@ -300,24 +316,33 @@ def lambda_handler(event, context):
                 all_results.extend(future.result())
 
         upload_futures = []
-        for process_future, image_id in all_results:
+        for process_future, image_id, original_s3_key in all_results:
             result = process_future.result()
             if result:
                 processed_files, s3_path, processing_time = result
                 processing_times.append(processing_time)
                 for local_path in processed_files:
                     relative_path = os.path.relpath(local_path, output_dir)
-                    s3_path = os.path.join('booth', image_id, relative_path) # booth 폴더 내 _id별로 폴더 구분해서 
+                    s3_path = os.path.join('booth', image_id, relative_path)# booth 폴더 내 _id별로 폴더 구분해서 
                     저장
-
+                    
                     upload_future = executor.submit(upload_to_s3, local_path, bucket_name, s3_path)
                     upload_futures.append(upload_future)
                     upload_future.add_done_callback(lambda x: update_completed_count())
                     upload_future.add_done_callback(lambda x: update_dynamodb(image_id, 'uploaded'))
+                
+                # 원본 이미지 삭제 작업을 별도의 Future로 생성
+                delete_future = executor.submit(delete_original_image, f"s3://{bucket_name}/{original_s3_key}")
+                delete_futures.append(delete_future)
 
+        # 업로드 완료 대기
         for future in as_completed(upload_futures):
             upload_time = future.result()
             upload_times.append(upload_time)
+
+        # 삭제 작업 완료 대기
+        for future in as_completed(delete_futures):
+            future.result()  # 예외 처리는 delete_original_image 함수 내에서 수행됨
 
     total_time = time.time() - start_time
     max_processing_time = max(processing_times) if processing_times else 0
