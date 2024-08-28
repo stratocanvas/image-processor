@@ -7,6 +7,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: github.actor == ${{ vars.ALLOWED_USER }}
     
     steps:
     - name: Checkout code
