@@ -5,8 +5,9 @@ on:
     branches: ["main"]
 
 jobs:
-  deploy:
+  deployment:
     runs-on: ubuntu-latest
+    environment: Production
     if: github.actor == ${{ vars.ALLOWED_USER }}
     
     steps:
