@@ -1,6 +1,11 @@
 # Kite Image Transformation
 Kite 서비스용 이미지 처리 레이어
+
+
 AWS Lambda에서 구동
+
+
+[![Deploy to AWS Lambda](https://github.com/stratocanvas/kiteapp-image-transformation/actions/workflows/aws.yml/badge.svg)](https://github.com/stratocanvas/kiteapp-image-transformation/actions/workflows/aws.yml)
 
 ## 기능
 - [x] 이미지에서 캐릭터 얼굴 인식하여 인식된 얼굴 중심으로 크롭
