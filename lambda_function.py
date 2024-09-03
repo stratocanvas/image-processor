@@ -483,13 +483,3 @@ def update_mongodb_urls(image_id, url_mappings):
         print(f"MongoDB 업데이트 중 오류 발생. 이미지 ID: {image_id}, 오류: {str(e)}")
     
     print(f"MongoDB 업데이트 종료. 이미지 ID: {image_id}")
-
-
-
-
-
-
-
-
-
-    #테스트를 위한 코드 수저

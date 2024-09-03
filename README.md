@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Kite Image Transformation
 Kite 서비스용 이미지 처리 레이어
 AWS Lambda에서 구동
@@ -19,17 +18,6 @@ AWS Lambda에서 구동
 > [!IMPORTANT]
 > 이 Lambda는 Python 3.12 arm64 (linux) 환경에서 구동됩니다.
 > 일부 라이브러리는 arm64 linux 환경에 맞는 배포 버전을 사용하거나, 혹은 직접 빌드해야 합니다.
-=======
-## Kite Image Transformation
-Kite 서비스용 이미지 처리 레이어
-AWS Lambda에서 구동
-
-## 사용 라이브러리
-- OpenCV
-- Vibrant
-
-## AWS Layer 생성
->>>>>>> origin/dev
 
 1. 다음 명령어 실행
 ```shell
