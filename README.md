@@ -26,12 +26,9 @@ pip install --platform manylinux2014_aarch64 --target=./python/lib/python3.12/si
 2. 생성된 `python`폴더 압축
 3. 압축 파일 S3에 업로드 후 Layer 지정
 
-<<<<<<< HEAD
 ## 배포
 - `main` branch에 커밋하면 Github Actions를 통해 자동으로 배포됩니다.
 
 ## TODO
 - [ ] 커스텀 OpenCV 빌드하여 라이브러리 경량화
 - [ ] 이미지 크롭에 cv2 대신 pyvips 또는 Pillow-SIMD 사용
-=======
->>>>>>> origin/dev
