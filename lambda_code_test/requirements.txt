@@ -1,0 +1,15 @@
+beautifulsoup4
+certifi
+charset-normalizer
+idna
+requests
+soupsieve
+urllib3
+pytest
+moto
+mongomock
+pymongo
+boto3
+opencv-python  # OpenCV 추가
+numpy  # NumPy 추가
+vibrant-python  # 색상 추출을 위한 라이브러리
