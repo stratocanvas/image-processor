@@ -10,6 +10,7 @@ moto
 mongomock
 pymongo
 boto3
-opencv-python  # OpenCV 추가
-numpy  # NumPy 추가
-vibrant-python  # 색상 추출을 위한 라이브러리
+opencv-python
+numpy
+vibrant-python
+setuptools
