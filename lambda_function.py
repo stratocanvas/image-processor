@@ -15,6 +15,17 @@ import threading
 from pymongo import MongoClient
 from bson import ObjectId
 
+# 얼굴 감지 함수 수정
+def detect_faces(image):
+    results = model(image)  # YOLOv8을 사용한 객체 탐지
+    faces = []
+    for result in results:
+        for box in result.boxes.data.tolist():
+            confidence = box[4]
+            if confidence > 0.6:  # 신뢰도 기준
+                x1, y1, x2, y2 = map(int, box[:4])
+                faces.append((x1, y1, x2 - x1, y2 - y1))  # (x, y, w, h) 형식으로 변환
+    return faces
 
 s3_client = boto3.client('s3')
 mongodb_uri = os.getenv('MONGODB_URI')
@@ -31,13 +42,6 @@ def download_image_from_s3(bucket, key):
     image_data = np.frombuffer(response['Body'].read(), dtype=np.uint8)
     download_time = time.time() - start_time
     return image_data, download_time, f"s3://{bucket}/{key}"
-
-# 캐릭터 얼굴 감지
-def detect_faces(image, cascade_file):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    face_cascade = cv2.CascadeClassifier(cascade_file)
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-    return faces
 
 # WEBP 변환
 def save_as_webp(image, file_path, type=None, quality=95, extracted_color=None):
@@ -92,10 +96,11 @@ def process_description_image(image, output_dir, original_name_no_ext):
 
 
 # 현수막 이미지
-def process_thumbnail_image(image, output_dir, original_name_no_ext, cascade_file):
-    faces = detect_faces(image, cascade_file) # 얼굴 감지
+def process_thumbnail_image(image, output_dir, original_name_no_ext):
+    faces = detect_faces(image)  # YOLOv8을 사용한 얼굴 감지
     height, width = image.shape[:2]
-    if len(faces) > 0: # 얼굴이 감지된 경우
+    
+    if len(faces) > 0:  # 얼굴이 감지된 경우
         x, y, w, h = faces[0]
         center_x, center_y = x + w // 2, y + h // 2
         new_width = int(height * 3 / 4)
@@ -103,22 +108,21 @@ def process_thumbnail_image(image, output_dir, original_name_no_ext, cascade_fil
         top = 0
         right = min(left + new_width, width)
         bottom = height
-        crop = image[top:bottom, left:right] # 감지된 얼굴 기준으로 3/4 비율 크롭
-        
-    else: # 얼굴이 감지되지 않은 경우
+        crop = image[top:bottom, left:right]  # 감지된 얼굴 기준으로 3/4 비율 크롭
+    else:  # 얼굴이 감지되지 않은 경우
         new_width = int(height * 3 / 4)
         left = (width - new_width) // 2
-        crop = image[:, left:left+new_width] # 가로 기준 중앙을 기준으로 3/4 비율 크롭
+        crop = image[:, left:left + new_width]  # 가로 기준 중앙을 기준으로 3/4 비율 크롭
     
     webp_file_name = f"{output_dir}/{original_name_no_ext}.webp"
-    result = save_as_webp(crop, webp_file_name) # WEBP 저장
-    del crop # GC  
+    result = save_as_webp(crop, webp_file_name)  # WEBP 저장
+    del crop  # GC  
     return [result]
 
 
 # 굿즈 이미지
-def process_product_image(image, output_dir, original_name_no_ext, cascade_file):
-    faces = detect_faces(image, cascade_file)
+def process_product_image(image, output_dir, original_name_no_ext):
+    faces = detect_faces(image)
     height, width = image.shape[:2]
 
     # 유효한 얼굴 선별
@@ -195,7 +199,7 @@ def process_product_image(image, output_dir, original_name_no_ext, cascade_file)
     return [result, result_p]
 
 # 이미지 처리 개시
-def process_image(img_type, image_data, s3_path, output_dir, cascade_file, image_id):
+def process_image(img_type, image_data, s3_path, output_dir, image_id):
     try:
         start_time = time.time()
         image = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
@@ -212,9 +216,9 @@ def process_image(img_type, image_data, s3_path, output_dir, cascade_file, image
         if img_type == 'description':
             result = process_description_image(image, output_dir, original_name_no_ext)
         elif img_type == 'thumbnail':
-            result = process_thumbnail_image(image, output_dir, original_name_no_ext, cascade_file)
+            result = process_thumbnail_image(image, output_dir, original_name_no_ext)
         elif img_type == 'product':
-            result = process_product_image(image, output_dir, original_name_no_ext, cascade_file)
+            result = process_product_image(image, output_dir, original_name_no_ext)
         else:
             print(f"Unsupported image type: {img_type}")
             return None
@@ -242,7 +246,7 @@ def upload_to_s3(local_path, bucket_name, s3_path):
     return upload_time
 
 # SQS 메시지 처리
-def process_record(record, output_dir, cascade_file, bucket_name):
+def process_record(record, output_dir, bucket_name):
     try:
         body = json.loads(record['body'])
         image_id = body['_id']
@@ -268,7 +272,7 @@ def process_record(record, output_dir, cascade_file, bucket_name):
                 img_type, s3_key = download_futures[future]
 
                 image_data, download_time, s3_path = future.result()
-                process_future = executor.submit(process_image, img_type, image_data, s3_path, output_dir, cascade_file, image_id)
+                process_future = executor.submit(process_image, img_type, image_data, s3_path, output_dir, image_id)
                 results.append((process_future, image_id, s3_key))
 
         return results, image_id, url_mappings
@@ -329,7 +333,6 @@ def lambda_handler(event, context):
     all_url_mappings = {}
     output_dir = '/tmp/output'
     os.makedirs(output_dir, exist_ok=True)
-    cascade_file = 'lbpcascade_animeface.xml'
     bucket_name = 'kiteapp'
 
     start_time = time.time()
@@ -355,7 +358,7 @@ def lambda_handler(event, context):
     all_url_mappings = {}
 
     with ThreadPoolExecutor(max_workers=20) as executor:
-        record_futures = [executor.submit(process_record, record, output_dir, cascade_file, bucket_name) for record in event['Records']]
+        record_futures = [executor.submit(process_record, record, output_dir, bucket_name) for record in event['Records']]
         
         all_results = []
         for future in as_completed(record_futures):
