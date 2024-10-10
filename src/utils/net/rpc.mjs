@@ -1,9 +1,4 @@
 /* global fetch */
-import dotenv from 'dotenv';
-
-// .env 파일 로드
-dotenv.config({ path: '.env.local' });
-
 async function update(query) {
   const response = await fetch(
     `${process.env.SUPABASE_URL}/rest/v1/rpc/update_image_url`,

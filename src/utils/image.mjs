@@ -19,7 +19,6 @@ export async function cropProductImage(buffer, box) {
 
   const cropOptions = getCropOptions(width, height, box);
   
-  // 두 크롭 작업을 병렬로 실행
   const [squareCrop, boxCrop] = await Promise.all([
     cropImage(buffer, cropOptions.square),
     cropImage(buffer, cropOptions.box)
@@ -64,7 +63,11 @@ export async function cropThumbnailImage(buffer, box) {
   const { width, height } = await image.metadata();
 
   const aspectRatio = 3 / 4;
-  let cropWidth, cropHeight, left, top;
+  let cropWidth
+  let cropHeight
+  let left
+  let top;
+
 
   if (box && typeof box.x === 'number' && typeof box.y === 'number' && typeof box.w === 'number' && typeof box.h === 'number') {
     const { x, y, w, h } = box;
@@ -158,7 +161,8 @@ export async function extractMutedColor(buffer) {
     return palette.Muted.hex.substring(1);
   } catch (error) {
     console.error('Error in extractMutedColor:', error);
-    throw error; // 오류를 상위로 전파하여 호출자가 처리하도록 함
+    throw error; 
+
   }
 }
 

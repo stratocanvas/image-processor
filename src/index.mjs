@@ -1,4 +1,3 @@
-import { update } from './utils/net/rpc.mjs';
 import { processImages } from './utils/process.mjs';
 
 // Lambda handler
@@ -27,8 +26,7 @@ async function processRecord(record) {
     return {
       statusCode: 200,
       body: JSON.stringify({
-        message: 'Record processed successfully',
-        processedImages,
+        message: 'Record processed successfully'
       }),
     };
   } catch (error) {
@@ -42,40 +40,3 @@ async function processRecord(record) {
     };
   }
 }
-
-// Test code (can be moved to a separate test file)
-const SQS_MESSAGE = {
-  "booth_id": 2,
-  "images": {
-    "thumbnail": "https://kiteapp.s3.ap-northeast-2.amazonaws.com/booth/queue/GZdTVY2a8AA9b_x.jpg",
-    "article": [
-      "https://kiteapp.s3.ap-northeast-2.amazonaws.com/booth/queue/GYzflWKakAAeblS.jpg",
-    ],
-    "product": [
-      "https://kiteapp.s3.ap-northeast-2.amazonaws.com/booth/queue/GZgr4gnacAI34VA.jpg",
-      "https://kiteapp.s3.ap-northeast-2.amazonaws.com/booth/queue/GZhPzD3aAAIsyoB.jpg",
-      "https://kiteapp.s3.ap-northeast-2.amazonaws.com/booth/queue/GZhYFB-awAAbv8B.jpg"
-    ]
-  }
-};
-
-handler({
-  "Records": [
-    {
-      "messageId": "19dd0b57-b21e-4ac1-bd88-01bbb068cb78",
-      "receiptHandle": "MessageReceiptHandle",
-      "body": JSON.stringify(SQS_MESSAGE),
-      "attributes": {
-        "ApproximateReceiveCount": "1",
-        "SentTimestamp": "1523232000000",
-        "SenderId": "123456789012",
-        "ApproximateFirstReceiveTimestamp": "1523232000001"
-      },
-      "messageAttributes": {},
-      "md5OfBody": "{{{md5_of_body}}}",
-      "eventSource": "aws:sqs",
-      "eventSourceARN": "arn:aws:sqs:us-east-1:123456789012:MyQueue",
-      "awsRegion": "us-east-1"
-    }
-  ]
-});

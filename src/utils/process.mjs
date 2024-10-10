@@ -7,7 +7,7 @@ export async function processImages(message) {
   const { booth_id, images } = message;
   const imageCategories = ['thumbnail', 'article', 'product'];
 
-  // 모든 이미지 다운로드 및 처리를 병렬로 실행
+  // 이미지 다운로드 및 처리
   const processedImages = await Promise.all(
     imageCategories.flatMap(category => 
       (Array.isArray(images[category]) ? images[category] : [images[category]])
@@ -16,10 +16,10 @@ export async function processImages(message) {
     )
   );
 
-  // 모든 이미지 크롭을 병렬로 실행
+  // 이미지 크롭
   const croppedImages = await Promise.all(processedImages.map(processCategoryImage));
   
-  // S3에 업로드 및 정리 작업 수행
+  // S3에 업로드 및 정리
   await uploadAndCleanup(booth_id, croppedImages, images);
 
   // 데이터베이스 업데이트를 위한 쿼리 생성 및 실행
@@ -55,7 +55,7 @@ async function downloadAndProcessImage(category, url) {
 
 async function runDetectionOnImage(buffer) {
   const options = {
-    modelPath: './head.onnx',
+    modelPath: process.env.MODEL_PATH,
     labels: ['head'],
     iouThreshold: 0.6,
     confidenceThreshold: 0.25,
@@ -159,7 +159,6 @@ async function processThumbnailImage(image) {
 }
 
 async function processArticleImage(image) {
-  // 원본 이미지의 메타데이터를 얻습니다.
   const { width: originalWidth, height: originalHeight } = await getImageMetadata(image.buffer);
 
   const articleCrops = await cropArticleImage(image.buffer);
@@ -212,15 +211,13 @@ async function uploadAndCleanup(boothId, processedImages, originalImages) {
     const { category, originalUrl, croppedImages } = image;
     const filename = originalUrl.split('/').pop();
 
-    // 크롭된 이미지 업로드 태스크 추가
     uploadTasks.push(...croppedImages.map(croppedImage => {
       const croppedFilename = `${filename.split('.')[0]}${croppedImage.suffix}.jpg`;
       return upload(boothId, croppedFilename, croppedImage.buffer);
     }));
 
-    // 원본 이미지 이동 태스크 추가 (product와 thumbnail 카테고리만)
     if (category === 'product' || category === 'thumbnail') {
-      const sourceKey = `booth/queue/${filename}`;
+      const sourceKey = `${process.env.QUEUE_PATH}/${filename}`;
       const destinationKey = `booth/${boothId}/${filename}`;
       moveOriginalTasks.push(moveObject(sourceKey, destinationKey));
     }
@@ -229,14 +226,11 @@ async function uploadAndCleanup(boothId, processedImages, originalImages) {
   }
 
   try {
-    // 모든 업로드 및 이동 작업 병렬 실행
     await Promise.all([...uploadTasks, ...moveOriginalTasks]);
 
     // queue에서 모든 원본 이미지 삭제
     if (imagesToDelete.size > 0) {
-      console.log(`Deleting ${imagesToDelete.size} images from queue`);
       await remove(Array.from(imagesToDelete));
-      console.log(`Successfully deleted ${imagesToDelete.size} images from queue`);
     } else {
       console.log('No images to delete from queue');
     }
@@ -258,7 +252,7 @@ function createUpdateQuery(boothId, croppedImages, originalImages) {
 
     const { category, originalUrl, croppedImages } = image;
     const filename = originalUrl.split('/').pop();
-    const baseUrl = `https://kiteapp.s3.ap-northeast-2.amazonaws.com/booth/${boothId}/${filename.split('.')[0]}`;
+    const baseUrl = `https://${process.env.BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/booth/${boothId}/${filename.split('.')[0]}`;
 
     switch (category) {
       case 'thumbnail':
