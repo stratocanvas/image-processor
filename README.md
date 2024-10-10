@@ -1,6 +1,8 @@
-# Kite Image Transformation
-Kite 서비스용 이미지 처리 레이어
-AWS Lambda에서 구동
+![](./og.png)
+
+# Kiteapp Image Processor
+
+Kite 서비스용 이미지 처리 Lambda
 [![Deploy to AWS Lambda](https://github.com/stratocanvas/kiteapp-image-transformation/actions/workflows/aws.yml/badge.svg)](https://github.com/stratocanvas/kiteapp-image-transformation/actions/workflows/aws.yml)
 
 ## 기능
