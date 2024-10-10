@@ -24,7 +24,7 @@ jobs:
 
     - name: Package Lambda function
       run: |
-        zip lambda_function.zip src
+        zip -r lambda_function.zip src
 
     - name: Deploy to Lambda
       run: |
