@@ -128,3 +128,10 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+.DS_Store
+biome.json
+*.onnx
+
+input/*
+output/*
+test.mjs

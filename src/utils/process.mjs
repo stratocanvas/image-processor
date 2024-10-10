@@ -159,7 +159,6 @@ async function processThumbnailImage(image) {
 }
 
 async function processArticleImage(image) {
-
   const { width: originalWidth, height: originalHeight } = await getImageMetadata(image.buffer);
 
   const articleCrops = await cropArticleImage(image.buffer);

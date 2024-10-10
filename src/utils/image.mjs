@@ -68,6 +68,7 @@ export async function cropThumbnailImage(buffer, box) {
   let left
   let top;
 
+
   if (box && typeof box.x === 'number' && typeof box.y === 'number' && typeof box.w === 'number' && typeof box.h === 'number') {
     const { x, y, w, h } = box;
     const centerX = x + w / 2;
@@ -161,6 +162,7 @@ export async function extractMutedColor(buffer) {
   } catch (error) {
     console.error('Error in extractMutedColor:', error);
     throw error; 
+
   }
 }
 

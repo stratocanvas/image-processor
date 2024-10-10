@@ -20,9 +20,7 @@ export const handler = async (event) => {
 // Process SQS record
 async function processRecord(record) {
   try {
-    console.log(record.body)
     const message = JSON.parse(record.body);    
-    console.log(message)
     const processedImages = await processImages(message);
     
     return {
