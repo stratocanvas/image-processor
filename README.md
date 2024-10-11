@@ -1,9 +1,9 @@
 ![](./og.png)
 
-# Kiteapp Image Processor
+# Kite Image Processor &middot; [![Deploy to AWS Lambda](https://github.com/stratocanvas/kiteapp-image-transformation/actions/workflows/aws.yml/badge.svg)](https://github.com/stratocanvas/kiteapp-image-transformation/actions/workflows/aws.yml)
 
 Kite 서비스용 이미지 처리 Lambda
-[![Deploy to AWS Lambda](https://github.com/stratocanvas/kiteapp-image-transformation/actions/workflows/aws.yml/badge.svg)](https://github.com/stratocanvas/kiteapp-image-transformation/actions/workflows/aws.yml)
+
 
 ## 기능
 - [x] 이미지에서 캐릭터 얼굴 인식하여 인식된 얼굴 중심으로 크롭
