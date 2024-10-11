@@ -51,7 +51,7 @@ export const upload = async (boothId, filename, data) => {
     const response = await client.send(command);
     return response;
   } catch (err) {
-    console.error(`Error uploading ${filename} to booth/${boothId}/:`, err);
+    console.error(`Error uploading ${filename}:`, err);
     throw err;
   }
 };
