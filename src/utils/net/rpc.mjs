@@ -1,7 +1,7 @@
 /* global fetch */
 async function update(query) {
   const response = await fetch(
-    `${process.env.SUPABASE_URL}/rest/v1/rpc/update_image_url`,
+    `${process.env.SUPABASE_URL}/rest/v1/rpc/${process.env.UPDATE_RPC_NAME}`,
     {
       method: 'POST',
       headers: {
